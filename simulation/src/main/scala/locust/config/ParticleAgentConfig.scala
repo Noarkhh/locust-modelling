@@ -23,7 +23,9 @@ final case class ParticleAgentConfig(
     guiType: GuiType,
     guiCellSize: Int,
     guiStartIteration: Long,
-    guiUpdateFrequency: Long
+    guiUpdateFrequency: Long,
+    agentContainerSize: Double,
+    meanAgentDensity: Double
 ) extends XinukConfig {
   val random: Random = new SecureRandom
 }

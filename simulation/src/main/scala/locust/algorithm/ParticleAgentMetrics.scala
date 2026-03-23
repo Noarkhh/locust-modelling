@@ -33,6 +33,9 @@ final case class ParticleAgentMetrics(
 }
 
 object ParticleAgentMetrics {
+  private val Empty = ParticleAgentMetrics(0, Seq.empty, Seq.empty)
+
+  def empty: ParticleAgentMetrics = Empty
   val MetricHeaders = Vector(
     "locustCount",
     "avgSpeed"

@@ -6,7 +6,11 @@ lazy val locustSimulation = (project in file("."))
     organization := "pl.edu.agh",
     version := "0.1.0",
     scalaVersion := "2.13.17",
-    mainClass := Some("locust.LocustMain"),
-    libraryDependencies += "org.scalanlp" %% "breeze" % "2.1.0"
+    Compile / mainClass := Some("pl.edu.agh.locust.LocustMain"),
+    run / fork := true,
+    libraryDependencies ++= Seq(
+      "org.scalanlp" %% "breeze" % "2.1.0",
+      "ch.qos.logback" % "logback-classic" % "1.2.3"
+    )
   )
   .dependsOn(xinukCore)
