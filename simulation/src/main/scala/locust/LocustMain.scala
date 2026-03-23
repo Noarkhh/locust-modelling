@@ -1,14 +1,14 @@
-package locust
+package pl.edu.afg.locust
 
 import java.awt.Color
 
 import com.typesafe.scalalogging.LazyLogging
-// import pl.edu.agh.rabbits.algorithm.{
-//   RabbitsMetrics,
+import pl.edu.agh.locust.algorithm.{
+  ParticleAgentMetrics
 //   RabbitsPlanCreator,
 //   RabbitsPlanResolver,
 //   RabbitsWorldCreator
-// }
+}
 // import pl.edu.agh.rabbits.model.{Lettuce, Rabbit}
 import pl.edu.agh.xinuk.Simulation
 import pl.edu.agh.xinuk.model.CellState
@@ -23,7 +23,7 @@ object LocustMain extends LazyLogging {
     import pl.edu.agh.xinuk.config.ValueReaders._
     // new Simulation(
     //   configPrefix,
-    //   RabbitsMetrics.MetricHeaders,
+    //   ParticleAgentMetrics.MetricHeaders,
     //   RabbitsWorldCreator,
     //   RabbitsPlanCreator,
     //   RabbitsPlanResolver,
