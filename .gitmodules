@@ -1,0 +1,3 @@
+[submodule "simulation/deps/xinuk"]
+	path = simulation/deps/xinuk
+	url = git@github.com:Noarkhh/xinuk.git
