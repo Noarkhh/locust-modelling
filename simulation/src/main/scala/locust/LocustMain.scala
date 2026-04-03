@@ -3,23 +3,21 @@ package pl.edu.agh.locust
 import java.awt.Color
 
 import com.typesafe.scalalogging.LazyLogging
-import pl.edu.agh.locust.algorithm.{
-  ParticleAgentMetrics
-//   RabbitsPlanCreator,
-//   RabbitsPlanResolver,
-//   RabbitsWorldCreator
-}
-// import pl.edu.agh.rabbits.model.{Lettuce, Rabbit}
 import pl.edu.agh.xinuk.Simulation
 import pl.edu.agh.xinuk.model.CellState
 import pl.edu.agh.xinuk.model.grid.GridSignalPropagation
-import pl.edu.agh.xinuk.simulation.GridInfoCellColor
+import pl.edu.agh.xinuk.simulation.GuiCellColor
 import pl.edu.agh.xinuk.algorithm.Metrics
-import pl.edu.agh.xinuk.simulation.GridInfoCellParticles
-import pl.edu.agh.locust.model.AgentContainer
-import pl.edu.agh.locust.algorithm.ParticleAgentPlanCreator
-import pl.edu.agh.locust.algorithm.ParticleAgentPlanResolver
-import pl.edu.agh.locust.algorithm.ParticleAgentWorldCreator
+import pl.edu.agh.xinuk.simulation.{GuiCellParticles, GuiParticle}
+
+import pl.edu.agh.locust.model.{Agent, AgentContainer}
+import pl.edu.agh.locust.algorithm.{
+  ParticleAgentMetrics,
+  ParticleAgentPlanCreator,
+  ParticleAgentPlanResolver,
+  ParticleAgentWorldCreator
+}
+import pl.edu.agh.locust.model.SPPAgent
 
 object LocustMain extends LazyLogging {
   private val configPrefix = "particle-agent"
@@ -38,15 +36,22 @@ object LocustMain extends LazyLogging {
     ).start()
   }
 
-  private def cellStatePayloader(cellState: CellState): GridInfoCellParticles = {
-    GridInfoCellParticles(cellState.contents match {
-      case AgentContainer(agents, size) =>
-        agents.map(agent => (agent.position(0) / size, agent.position(1) / size))
-    })
+  private def cellStatePayloader(cellState: CellState): GuiCellParticles = {
+
+    val container = cellState.contents.asInstanceOf[AgentContainer[SPPAgent]]
+
+    val particles = container.agents.map(agent =>
+      GuiParticle(
+        (agent.position(0) - container.xMin) / container.size,
+        (agent.position(1) - container.yMin) / container.size
+      )
+    )
+
+    GuiCellParticles(particles, container.particlesColor)
   }
 
-  // private def cellStatePayloader(cellState: CellState): GridInfoCellColor = {
-  //   GridInfoCellColor(cellState.contents match {
+  // private def cellStatePayloader(cellState: CellState): GuiCellColor = {
+  //   GuiCellColor(cellState.contents match {
   //     case _: Rabbit  => new Color(140, 69, 19)
   //     case _: Lettuce => new Color(0, 128, 0)
   //     case _          => Color.WHITE

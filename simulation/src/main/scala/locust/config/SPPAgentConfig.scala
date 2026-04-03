@@ -6,7 +6,7 @@ import pl.edu.agh.xinuk.model.WorldType
 import scala.util.Random
 import java.security.SecureRandom
 
-final case class ParticleAgentConfig(
+final case class SPPAgentConfig(
     worldType: WorldType,
     worldWidth: Int,
     worldHeight: Int,
@@ -21,11 +21,23 @@ final case class ParticleAgentConfig(
     isSupervisor: Boolean,
     shardingMod: Int,
     guiType: GuiType,
+    guiParticleSize: Int,
     guiCellSize: Int,
     guiStartIteration: Long,
     guiUpdateFrequency: Long,
+    timestepLength: Double,
     agentContainerSize: Double,
-    meanAgentDensity: Double
+    meanAgentDensity: Double,
+    averageSpeed: Double,
+    previousDirectionWeight: Double,
+    randomComponentWeight: Double,
+    repulsionRange: Double,
+    alignmentRange: Double,
+    attractionRange: Double,
+    repulsionWeight: Double,
+    alignmentWeight: Double,
+    attractionWeight: Double,
+    occlusionThreshold: Int
 ) extends XinukConfig {
   val random: Random = new SecureRandom
 }
