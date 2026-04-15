@@ -14,6 +14,8 @@ import pl.edu.agh.locust.algorithm.ParticleAgentUpdate._
 import pl.edu.agh.locust.model.{AgentContainer, AgentBehaviour, Agent}
 import pl.edu.agh.locust.config.SPPAgentConfig
 import pl.edu.agh.locust.model.SPPAgent
+import quadtree.Point
+import quadtree.QuadTree
 
 final case class ParticleAgentPlanCreator() extends PlanCreator[SPPAgentConfig] {
   def createPlans(
@@ -37,7 +39,7 @@ final case class ParticleAgentPlanCreator() extends PlanCreator[SPPAgentConfig] 
       neighbourContents: Map[Direction, CellContents]
   )(implicit config: SPPAgentConfig): (Plans, Metrics) = {
 
-    val neighbourAgents: Set[A] = neighbourContents
+    val neighbourAgents = neighbourContents
       .map({ case (direction, contents) =>
         createWrappedAgentViews(
           cellId,
@@ -45,21 +47,21 @@ final case class ParticleAgentPlanCreator() extends PlanCreator[SPPAgentConfig] 
           contents.asInstanceOf[AgentContainer[A]]
         )
       })
-      .reduce(_ ++ _)
 
     val localAgents = agentContainer.agents
-    val agentsInRange = neighbourAgents ++ localAgents
+    // val agentsInRange = neighbourAgents ++ localAgents
 
     val worldWidth = config.worldWidth * config.agentContainerSize
     val worldHeight = config.worldHeight * config.agentContainerSize
 
     // val movedLocalAgents: Set[A] =
     val movedLocalAgents =
-      localAgents
+      agentContainer.agents
         .map(agent => {
           // println(agent.position)
           // println(cellId)
-          val updatedAgent = agentContainer.behaviour.update(agent, agentsInRange)
+          val localNearestAgents = agentContainer.knnSearch(agent, config.occlusionThreshold)
+          val updatedAgent = agentContainer.behaviour.update(agent, localNearestAgents)
           val movedAgent = agentContainer.behaviour.move(updatedAgent, config.timestepLength)
 
           movedAgent
@@ -71,6 +73,7 @@ final case class ParticleAgentPlanCreator() extends PlanCreator[SPPAgentConfig] 
           // agentContainer.behaviour.translate(movedAgent, DenseVector(agentX, agentY))
 
         })
+        .toSet[A]
         .groupMap(agent => {
           val xShift =
             if (agent.position(0) < agentContainer.xMin) -1
@@ -118,7 +121,7 @@ final case class ParticleAgentPlanCreator() extends PlanCreator[SPPAgentConfig] 
       currentCellId: GridCellId,
       neighbourDirection: GridDirection,
       agentContainer: AgentContainer[A]
-  )(implicit config: SPPAgentConfig): Set[A] = {
+  )(implicit config: SPPAgentConfig): AgentContainer[A] = {
     val horizontalWrapAroundDistance = config.worldWidth * config.agentContainerSize
 
     val horizontalTranslation =
@@ -139,17 +142,29 @@ final case class ParticleAgentPlanCreator() extends PlanCreator[SPPAgentConfig] 
 
     if (horizontalTranslation != 0.0 && verticalTranslation != 0.0) {
       val translationVector = DenseVector(horizontalTranslation, verticalTranslation)
-
-      agentContainer.agents.map(agent =>
-        agentContainer.behaviour.translate(agent, agent.position + translationVector)
+      val view = agentContainer.copy(
+        xMin = agentContainer.xMin + horizontalTranslation,
+        yMin = agentContainer.yMin + verticalTranslation
       )
-    } else agentContainer.agents
+      view.clear()
+
+      agentContainer.agents
+        .foreach(agent => {
+          val translatedAgent =
+            agentContainer.behaviour.translate(agent, agent.position + translationVector)
+          view.insert(translatedAgent)
+          // q.insert(Point(translatedAgent.position(0), translatedAgent.position(1)), translatedAgent)
+        })
+
+      view
+
+    } else agentContainer
 
   }
 
   private def redistributeAgents[A <: Agent](
       agentContainer: AgentContainer[A],
-      agents: Set[A]
+      agents: Iterable[A]
   ): Seq[(Option[Direction], Plan)] = {
     agents
       .groupBy(agent => {

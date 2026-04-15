@@ -14,12 +14,12 @@ import breeze.linalg.DenseVector
 import breeze.numerics.cos
 import breeze.numerics.sin
 import java.awt.Color
+import quadtree.{QuadTree, Point}
 
 object ParticleAgentWorldCreator extends WorldCreator[SPPAgentConfig] {
 
   override def prepareWorld()(implicit config: SPPAgentConfig): WorldBuilder = {
     val worldBuilder = GridWorldBuilder().withGridConnections().withWrappedBoundaries()
-
     val colors = Map(
       (0, 0) -> Color.BLACK,
       (0, 1) -> Color.MAGENTA,
@@ -37,11 +37,22 @@ object ParticleAgentWorldCreator extends WorldCreator[SPPAgentConfig] {
       y <- 0 until config.worldHeight
     } {
       val agentsAmount =
-        // if (x == 0 && y == 0)
         (config.meanAgentDensity * config.agentContainerSize * config.agentContainerSize).toInt
-      // else 0
+
+      val containerXCenter = (x + 0.5) * config.agentContainerSize
+      val containerYCenter = (y + 0.5) * config.agentContainerSize
+
+      val contents = new AgentContainer(
+        -1,
+        SPPAgent.Behaviour,
+        config.agentContainerSize,
+        x * config.agentContainerSize,
+        y * config.agentContainerSize,
+        colors.getOrElse((x, y), Color.BLACK)
+      )
+
       var agents = Range(0, agentsAmount)
-        .map(i => {
+        .foreach(i => {
 
           val position =
             DenseVector(
@@ -52,19 +63,10 @@ object ParticleAgentWorldCreator extends WorldCreator[SPPAgentConfig] {
           val angle = config.random.nextDouble() * 2 * Pi
           val direction = DenseVector(cos(angle), sin(angle))
 
-          SPPAgent(position, direction)
+          val agent = SPPAgent(position, direction)
+          contents.insert(agent)
         })
-        .toSet
 
-      val contents = AgentContainer(
-        agents,
-        -1,
-        SPPAgent.Behaviour,
-        config.agentContainerSize,
-        x * config.agentContainerSize,
-        y * config.agentContainerSize,
-        colors.getOrElse((x, y), Color.BLACK)
-      )
       worldBuilder(GridCellId(x, y)) = CellState(contents)
     }
 

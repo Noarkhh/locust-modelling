@@ -8,6 +8,7 @@ import pl.edu.agh.locust.algorithm.ParticleAgentMetrics
 import pl.edu.agh.locust.algorithm.ParticleAgentUpdate._
 import pl.edu.agh.locust.model.{Agent, AgentContainer, SPPAgent}
 import java.awt.Color
+import quadtree.{QuadTree, Point}
 
 final case class ParticleAgentPlanResolver() extends PlanResolver[SPPAgentConfig] {
   def isUpdateValid(iteration: Long, contents: CellContents, update: Update)(implicit
@@ -31,10 +32,10 @@ final case class ParticleAgentPlanResolver() extends PlanResolver[SPPAgentConfig
     val agentContainer = contents.asInstanceOf[AgentContainer[A]]
     if (iteration > agentContainer.lastUpdateIteration) {
       agentContainer.lastUpdateIteration = iteration
-      agentContainer.agents = addAgents.agents
-    } else {
-      agentContainer.agents ++= addAgents.agents
+      // agentContainer.agents = addAgents.agents
+      agentContainer.clear()
     }
+    addAgents.agents.foreach(agentContainer.insert(_))
     agentContainer
   }
 }
