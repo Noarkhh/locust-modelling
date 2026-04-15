@@ -40,12 +40,18 @@ object LocustMain extends LazyLogging {
 
     val container = cellState.contents.asInstanceOf[AgentContainer[SPPAgent]]
 
-    val particles = container.agents.map(agent =>
+    val particles = container.agents.map(agent => {
+      if (
+        container.xMin > agent.position(0) || agent.position(0) > container.xMin + container.size
+      ) {
+        println("agent out of container")
+      }
+
       GuiParticle(
         (agent.position(0) - container.xMin) / container.size,
         (agent.position(1) - container.yMin) / container.size
       )
-    )
+    })
 
     GuiCellParticles(particles, container.particlesColor)
   }

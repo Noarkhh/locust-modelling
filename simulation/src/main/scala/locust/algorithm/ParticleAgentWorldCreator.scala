@@ -37,7 +37,9 @@ object ParticleAgentWorldCreator extends WorldCreator[SPPAgentConfig] {
       y <- 0 until config.worldHeight
     } {
       val agentsAmount =
+        // if (x == 0 && y == 0)
         (config.meanAgentDensity * config.agentContainerSize * config.agentContainerSize).toInt
+      // else 0
       var agents = Range(0, agentsAmount)
         .map(i => {
 

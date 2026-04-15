@@ -1,3 +1,6 @@
 [submodule "simulation/deps/xinuk"]
 	path = simulation/deps/xinuk
 	url = git@github.com:Noarkhh/xinuk.git
+[submodule "simulation/deps/quadtree-scala"]
+	path = simulation/deps/quadtree-scala
+	url = https://github.com/johnr1/quadtree-scala.git

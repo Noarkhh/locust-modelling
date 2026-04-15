@@ -1,4 +1,5 @@
 lazy val xinukCore = ProjectRef(file("deps/xinuk"), "xinuk-core")
+lazy val quadTree = ProjectRef(file("deps/quadtree-scala"), "quadtree-scala")
 
 lazy val locustSimulation = (project in file("."))
   .settings(
@@ -13,4 +14,11 @@ lazy val locustSimulation = (project in file("."))
       "ch.qos.logback" % "logback-classic" % "1.2.3"
     )
   )
-  .dependsOn(xinukCore)
+  .settings(
+    assembly / assemblyMergeStrategy := {
+      case PathList("META-INF", xs @ _*) => MergeStrategy.discard
+      case "reference.conf"              => MergeStrategy.concat
+      case x                             => MergeStrategy.first
+    }
+  )
+  .dependsOn(xinukCore, quadTree)
