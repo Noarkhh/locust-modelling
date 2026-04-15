@@ -12,7 +12,7 @@ sealed trait Agent {
 }
 
 sealed trait AgentBehaviour[A <: Agent, C <: XinukConfig] {
-  def update(agent: A, conspecifics: Set[A])(implicit config: C): A
+  def update(agent: A, conspecifics: Iterable[A])(implicit config: C): A
   def move(agent: A, deltaTime: Double)(implicit config: C): A
   def translate(agent: A, newPosition: DenseVector[Double]): A
 }
@@ -22,7 +22,7 @@ final case class SPPAgent(position: DenseVector[Double], direction: DenseVector[
 
 object SPPAgent {
   implicit case object Behaviour extends AgentBehaviour[SPPAgent, SPPAgentConfig] {
-    def update(agent: SPPAgent, others: Set[SPPAgent])(implicit
+    def update(agent: SPPAgent, others: Iterable[SPPAgent])(implicit
         config: SPPAgentConfig
     ): SPPAgent = {
       val socialForce: DenseVector[Double] = others
@@ -36,16 +36,16 @@ object SPPAgent {
         //     (norm(displacement), other.direction, normalize(displacement))
         //   }
         // )(Ordering.by(_._1))
-        .takeBy(
-          config.occlusionThreshold,
-          other => {
-            // (agent.position(0) - other.position(0)) * (agent.position(0) - other.position(0))
-            //   + (agent.position(1) - other.position(1)) * (agent.position(1) - other.position(1))
-            //
-            val displacement = agent.position - other.position
-            displacement dot displacement
-          }
-        )
+        // .takeBy(
+        //   config.occlusionThreshold,
+        //   other => {
+        //     // (agent.position(0) - other.position(0)) * (agent.position(0) - other.position(0))
+        //     //   + (agent.position(1) - other.position(1)) * (agent.position(1) - other.position(1))
+        //     //
+        //     val displacement = agent.position - other.position
+        //     displacement dot displacement
+        //   }
+        // )
 
         // .toList
         // .sortBy(_._1)
@@ -119,7 +119,7 @@ object SPPAgent {
 }
 
 final case class AgentContainer[A <: Agent](
-    var agents: Set[A],
+    var agents: Iterable[A],
     var lastUpdateIteration: Long,
     behaviour: AgentBehaviour[A, SPPAgentConfig],
     size: Double,
