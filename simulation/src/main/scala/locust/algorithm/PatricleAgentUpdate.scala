@@ -4,5 +4,5 @@ import pl.edu.agh.xinuk.algorithm.Update
 import pl.edu.agh.locust.model.Agent
 
 object ParticleAgentUpdate {
-  case class AddAgents[A <: Agent](agents: Set[A]) extends Update
+  case class AddAgents[A <: Agent](agents: Iterable[A]) extends Update
 }
