@@ -37,7 +37,10 @@ final case class SPPAgentConfig(
     repulsionWeight: Double,
     alignmentWeight: Double,
     attractionWeight: Double,
-    occlusionThreshold: Int
+    occlusionThreshold: Int,
+    localOrderNeighbours: Int
 ) extends XinukConfig {
   val random: Random = new SecureRandom
+  val population: Int =
+    (meanAgentDensity * agentContainerSize * agentContainerSize).toInt * worldHeight * worldWidth
 }

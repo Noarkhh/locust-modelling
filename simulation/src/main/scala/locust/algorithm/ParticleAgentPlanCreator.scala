@@ -1,6 +1,7 @@
 package pl.edu.agh.locust.algorithm
 
 import breeze.linalg.DenseVector
+import breeze.linalg.norm
 import java.awt.Color
 
 import pl.edu.agh.xinuk.algorithm.PlanCreator
@@ -60,20 +61,7 @@ final case class ParticleAgentPlanCreator() extends PlanCreator[SPPAgentConfig] 
     val agentsInRange = neighbourAgents ++ localAgents
 
     agentsInRange.foreach(agent =>
-      try {
-        temporaryQuadtree.insert(Point(agent.position(0), agent.position(1)), agent)
-      } catch {
-        case e => {
-          println(s"dupa: ${agent.position}")
-          println(
-            s"dupa2: ${Point(agentContainer.xMin + 0.5 * agentContainer.size, agentContainer.yMin + 0.5 * agentContainer.size)}"
-          )
-          println(
-            s"dupa3: ${1.5 * agentContainer.size + 1e-7}"
-          )
-          throw e
-        }
-      }
+      temporaryQuadtree.insert(Point(agent.position(0), agent.position(1)), agent)
     )
 
     val worldWidth = config.worldWidth * config.agentContainerSize
@@ -83,11 +71,10 @@ final case class ParticleAgentPlanCreator() extends PlanCreator[SPPAgentConfig] 
     val movedLocalAgents =
       localAgents
         .map(agent => {
-          // println(agent.position)
-          // println(cellId)
           val conspecifics = temporaryQuadtree
-            .knnSearch(Point(agent.position(0), agent.position(1)), config.occlusionThreshold)
+            .knnSearch(Point(agent.position(0), agent.position(1)), config.occlusionThreshold + 1)
             .map(_._2)
+            .filter(_ != agent)
           val updatedAgent = agentContainer.behaviour.update(agent, conspecifics)
           val movedAgent = agentContainer.behaviour.move(updatedAgent, config.timestepLength)
 
@@ -138,7 +125,7 @@ final case class ParticleAgentPlanCreator() extends PlanCreator[SPPAgentConfig] 
     // val plans = Plans(redistributeAgents(agentContainer, movedLocalAgents))
     val plans = Plans(movedLocalAgents)
 
-    (plans, ParticleAgentMetrics.empty)
+    (plans, computeMetrics(localAgents, temporaryQuadtree))
     // (Plans.empty, ParticleAgentMetrics.empty)
 
   }
@@ -176,6 +163,37 @@ final case class ParticleAgentPlanCreator() extends PlanCreator[SPPAgentConfig] 
       agentContainer.agents
     }
 
+  }
+
+  private def computeMetrics[A <: Agent](
+      agents: Iterable[A],
+      temporaryQuadtree: QuadTree[A]
+  )(implicit config: SPPAgentConfig): ParticleAgentMetrics = {
+    if (agents.size == 0) return ParticleAgentMetrics.empty
+
+    val neighbourhoodOrders = agents
+      .map(agent => {
+        norm(
+          temporaryQuadtree
+            .knnSearch(Point(agent.position(0), agent.position(1)), config.localOrderNeighbours + 1)
+            .map(_._2.direction)
+            .reduce(_ + _)
+        ) / (config.localOrderNeighbours + 1)
+      })
+
+    val localOrder = neighbourhoodOrders.sum / neighbourhoodOrders.size
+
+    val directionSum = agents.map(_.direction).reduce(_ + _)
+
+    val cellOrder = norm(directionSum) / agents.size
+
+    ParticleAgentMetrics.init(
+      agents.size,
+      agents.size.toDouble / config.population,
+      localOrder,
+      cellOrder,
+      directionSum
+    )
   }
 
   private def redistributeAgents[A <: Agent](

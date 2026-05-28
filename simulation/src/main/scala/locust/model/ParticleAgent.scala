@@ -9,6 +9,7 @@ import scala.collection.mutable.PriorityQueue
 
 sealed trait Agent {
   val position: DenseVector[Double]
+  val direction: DenseVector[Double]
 }
 
 sealed trait AgentBehaviour[A <: Agent, C <: XinukConfig] {
@@ -25,31 +26,8 @@ object SPPAgent {
     def update(agent: SPPAgent, others: Iterable[SPPAgent])(implicit
         config: SPPAgentConfig
     ): SPPAgent = {
+      if (others.size == 0) return agent
       val socialForce: DenseVector[Double] = others
-        // .map(other => {
-        //   val displacement: DenseVector[Double] = agent.position - other.position
-        //   (norm(displacement), other.direction, normalize(displacement)) })
-        // .takeBy(
-        //   config.occlusionThreshold,
-        //   other => {
-        //     val displacement: DenseVector[Double] = agent.position - other.position
-        //     (norm(displacement), other.direction, normalize(displacement))
-        //   }
-        // )(Ordering.by(_._1))
-        // .takeBy(
-        //   config.occlusionThreshold,
-        //   other => {
-        //     // (agent.position(0) - other.position(0)) * (agent.position(0) - other.position(0))
-        //     //   + (agent.position(1) - other.position(1)) * (agent.position(1) - other.position(1))
-        //     //
-        //     val displacement = agent.position - other.position
-        //     displacement dot displacement
-        //   }
-        // )
-
-        // .toList
-        // .sortBy(_._1)
-        // .take(config.occlusionThreshold)
         .map(other => {
 
           val displacement = agent.position - other.position
