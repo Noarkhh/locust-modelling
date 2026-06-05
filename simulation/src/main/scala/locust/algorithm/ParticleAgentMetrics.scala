@@ -23,7 +23,7 @@ final case class ParticleAgentMetrics(
     "populationShare" -> populationShare,
     "averageLocalOrder" -> localOrders.sum / localOrders.size,
     "averageCellOrder" -> cellOrders.sum / cellOrders.size,
-    "shardOrder" -> norm(directionSum) / agentsCount
+    "globalOrder" -> norm(directionSum) / agentsCount
 
     // "directionSumX" -> directionSum(0),
     // "directionSumY" -> directionSum(1)
