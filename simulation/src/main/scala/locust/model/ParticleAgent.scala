@@ -1,11 +1,15 @@
 package pl.edu.agh.locust.model
 
+import scala.math.Pi
 import java.awt.Color
-import breeze.linalg.{DenseVector, norm, normalize, sum}
+import breeze.linalg.{DenseVector, norm, normalize, sum, min}
+import breeze.numerics.{cos, sin}
 import pl.edu.agh.xinuk.model.CellContents
 import pl.edu.agh.xinuk.config.XinukConfig
-import pl.edu.agh.locust.config.SPPAgentConfig
+import pl.edu.agh.locust.config.ParticleAgentConfig
+import pl.edu.agh.locust.utils.ImplicitVectorOps._
 import scala.collection.mutable.PriorityQueue
+import breeze.linalg.max
 
 sealed trait Agent {
   val position: DenseVector[Double]
@@ -13,95 +17,133 @@ sealed trait Agent {
 }
 
 sealed trait AgentBehaviour[A <: Agent, C <: XinukConfig] {
-  def update(agent: A, conspecifics: Iterable[A])(implicit config: C): A
+  def update(agent: A, others: Iterable[A])(implicit config: C): A
   def move(agent: A, deltaTime: Double)(implicit config: C): A
   def translate(agent: A, newPosition: DenseVector[Double]): A
 }
 
-final case class SPPAgent(position: DenseVector[Double], direction: DenseVector[Double])
-    extends Agent
+final case class SPPAgent(
+    position: DenseVector[Double],
+    direction: DenseVector[Double],
+    activeTimeLeft: Double,
+    isActive: Boolean,
+    nextIterationDirection: DenseVector[Double],
+    hopIterationsLeft: Int,
+    id: Long
+) extends Agent
 
 object SPPAgent {
-  implicit case object Behaviour extends AgentBehaviour[SPPAgent, SPPAgentConfig] {
+  def apply(position: DenseVector[Double], direction: DenseVector[Double], id: Long)(implicit
+      config: ParticleAgentConfig
+  ): SPPAgent =
+    SPPAgent(
+      position,
+      direction,
+      config.activityPeriod,
+      true,
+      direction,
+      0,
+      id
+    )
+
+  implicit case object Behaviour extends AgentBehaviour[SPPAgent, ParticleAgentConfig] {
     def update(agent: SPPAgent, others: Iterable[SPPAgent])(implicit
-        config: SPPAgentConfig
+        config: ParticleAgentConfig
     ): SPPAgent = {
       if (others.size == 0) return agent
-      val socialForce: DenseVector[Double] = others
-        .map(other => {
 
-          val displacement = agent.position - other.position
-          val distance = norm(displacement)
-          val displacementDirection = normalize(displacement)
+      val (socialForce, isRepulsionZoneOccupied) = calculateSocialForce(agent, others)
 
-          if (distance < config.repulsionRange)
-            -config.repulsionWeight * displacementDirection
-          else if (distance < config.alignmentRange)
-            config.alignmentWeight * other.direction
-          else if (distance < config.attractionRange)
-            config.attractionWeight * displacementDirection
-          else
-            DenseVector.zeros[Double](2)
+      val randomAngle = config.random.nextDouble() * 2 * Pi
+      val randomDirection = DenseVector(cos(randomAngle), sin(randomAngle))
 
-        })
-        .reduce(_ + _)
+      val noisedDirection =
+        (config.randomComponentWeight * randomDirection + (1 - config.randomComponentWeight) * agent.direction)
+          .normalize()
 
       val newDirection: DenseVector[Double] =
-        normalize(
-          config.previousDirectionWeight * agent.direction +
-            (1 - config.previousDirectionWeight) * normalize(socialForce)
-        )
+        (
+          config.previousDirectionWeight * noisedDirection +
+            (1 - config.previousDirectionWeight) * socialForce.normalize()
+        ).normalize()
 
-      agent.copy(direction = newDirection)
+      val hopIterationsLeft =
+        if (agent.hopIterationsLeft > 0) {
+          agent.hopIterationsLeft - 1
+        } else {
+          val willHop =
+            if (isRepulsionZoneOccupied) config.random.nextDouble() < config.crowdedHopProbability
+            else config.random.nextDouble() < config.hopProbability
+
+          if (willHop) config.hopDurationTimesteps
+          else 0
+        }
+
+      val isActive = agent.activeTimeLeft > 0.0
+      val inactiveTime = max(-agent.activeTimeLeft, 0.0)
+      val reactivate =
+        if (inactiveTime >= config.minimalInactivityPeriod)
+          config.random.nextDouble() < config.resumeMarchProbabilityPerTimestep
+        else false
+
+      val activeTimeLeft =
+        if (reactivate) config.activityPeriod else agent.activeTimeLeft - config.timestepDuration
+
+      agent.copy(
+        nextIterationDirection = newDirection,
+        hopIterationsLeft = hopIterationsLeft,
+        isActive = isActive,
+        activeTimeLeft = activeTimeLeft
+      )
     }
 
-    def move(agent: SPPAgent, deltaTime: Double)(implicit config: SPPAgentConfig): SPPAgent = {
-      val newPosition = agent.position + agent.direction * deltaTime * config.averageSpeed
+    def move(agent: SPPAgent, deltaTime: Double)(implicit config: ParticleAgentConfig): SPPAgent = {
+      if (!agent.isActive) return agent
+      val speed =
+        if (agent.hopIterationsLeft <= 0) config.averageSpeed
+        else config.hopSpeed
 
-      agent.copy(position = newPosition)
+      val newPosition = agent.position + agent.nextIterationDirection * deltaTime * speed
+
+      agent.copy(position = newPosition, direction = agent.nextIterationDirection)
     }
 
     def translate(agent: SPPAgent, newPosition: DenseVector[Double]): SPPAgent = {
       agent.copy(position = newPosition)
     }
 
-    implicit class IterableOps[T](val elements: Iterable[T]) extends AnyVal {
-      def takeBy[A](n: Int, byFunc: T => A)(implicit
-          ord: Ordering[A]
-      ): List[T] = {
+    private def calculateSocialForce(
+        agent: SPPAgent,
+        others: Iterable[SPPAgent]
+    )(implicit config: ParticleAgentConfig): (DenseVector[Double], Boolean) =
+      others
+        .map(other => {
+          val displacement = agent.position - other.position
+          val distance = displacement.norm()
+          val displacementDirection = displacement.normalize()
 
-        // 1. Define ordering to ONLY look at the first element of the tuple
-        implicit val ByOrdering: Ordering[(A, T)] = Ordering.by(_._1)
+          val socialForceFactor =
+            if (distance < config.repulsionRange)
+              config.repulsionWeight * displacementDirection
+            else if (distance < config.alignmentRange)
+              config.alignmentWeight * other.direction
+            else if (distance < config.attractionRange)
+              -config.attractionWeight * displacementDirection
+            else
+              DenseVector.zeros[Double](2)
 
-        // 2. PriorityQueue is a Max-Heap by default in Scala.
-        // The largest '_._1' will be at the head of the queue.
-        val maxHeap = PriorityQueue.empty[(A, T)]
+          (socialForceFactor, distance < config.repulsionRange)
+        })
+        .reduce(((a1, a2) => (a1._1 + a2._1, a1._2 || a2._2)))
 
-        // 3. Iterate the original set, applying the map function on the fly
-        elements.foreach { item =>
-          val mappedTuple = (byFunc(item), item) // Transform right before evaluating
-
-          maxHeap.enqueue(mappedTuple)
-
-          // 4. If we exceed n, discard the element with the LARGEST first value
-          if (maxHeap.size > n) {
-            maxHeap.dequeue()
-          }
-        }
-
-        // 5. Extract results and sort them ascending (lowest to highest)
-        maxHeap.map(_._2).toList
-      }
-    }
   }
 }
 
 final case class AgentContainer[A <: Agent](
     var agents: Iterable[A],
     var lastUpdateIteration: Long,
-    behaviour: AgentBehaviour[A, SPPAgentConfig],
+    behaviour: AgentBehaviour[A, ParticleAgentConfig],
     size: Double,
     xMin: Double,
-    yMin: Double,
-    particlesColor: Color
+    yMin: Double
 ) extends CellContents

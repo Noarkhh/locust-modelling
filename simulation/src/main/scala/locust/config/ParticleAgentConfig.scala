@@ -5,8 +5,9 @@ import pl.edu.agh.xinuk.config.GuiType
 import pl.edu.agh.xinuk.model.WorldType
 import scala.util.Random
 import java.security.SecureRandom
+import breeze.numerics.pow
 
-final case class SPPAgentConfig(
+final case class ParticleAgentConfig(
     worldType: WorldType,
     worldWidth: Int,
     worldHeight: Int,
@@ -25,9 +26,12 @@ final case class SPPAgentConfig(
     guiParticleSize: Int,
     guiStartIteration: Long,
     guiUpdateFrequency: Long,
-    timestepLength: Double,
+    timestepDuration: Double,
     agentContainerSize: Double,
-    meanAgentDensity: Double,
+    agentAmount: Int,
+    initialAreaCenterX: Double,
+    initialAreaCenterY: Double,
+    initialAreaRadius: Double,
     averageSpeed: Double,
     previousDirectionWeight: Double,
     randomComponentWeight: Double,
@@ -38,9 +42,18 @@ final case class SPPAgentConfig(
     alignmentWeight: Double,
     attractionWeight: Double,
     occlusionThreshold: Int,
+    hopProbability: Double,
+    crowdedHopProbability: Double,
+    hopDuration: Double,
+    hopSpeed: Double,
+    activityPeriod: Double,
+    minimalInactivityPeriod: Double,
+    resumeMarchProbabilityPerSec: Double,
     localOrderNeighbours: Int
 ) extends XinukConfig {
   val random: Random = new SecureRandom
-  val population: Int =
-    (meanAgentDensity * agentContainerSize * agentContainerSize).toInt * worldHeight * worldWidth
+  val hopDurationTimesteps: Int = (hopDuration / timestepDuration).toInt
+  val resumeMarchProbabilityPerTimestep: Double =
+    1.0 - pow((1.0 - resumeMarchProbabilityPerSec), timestepDuration)
+  println(resumeMarchProbabilityPerTimestep)
 }

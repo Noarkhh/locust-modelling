@@ -13,22 +13,22 @@ import pl.edu.agh.xinuk.model.grid.GridDirection._
 
 import pl.edu.agh.locust.algorithm.ParticleAgentUpdate._
 import pl.edu.agh.locust.model.{AgentContainer, AgentBehaviour, Agent}
-import pl.edu.agh.locust.config.SPPAgentConfig
+import pl.edu.agh.locust.config.ParticleAgentConfig
 import pl.edu.agh.locust.model.SPPAgent
 import quadtree.{QuadTree, Point}
 
-final case class ParticleAgentPlanCreator() extends PlanCreator[SPPAgentConfig] {
+final case class ParticleAgentPlanCreator() extends PlanCreator[ParticleAgentConfig] {
   def createPlans(
       iteration: Long,
       cellId: CellId,
       cellState: CellState,
       neighbourContents: Map[Direction, CellContents]
-  )(implicit config: SPPAgentConfig): (Plans, Metrics) = {
+  )(implicit config: ParticleAgentConfig): (Plans, Metrics) = {
     createContainerPlans(
       iteration,
       cellId.asInstanceOf[GridCellId],
-      cellState.contents.asInstanceOf[AgentContainer[_ <: Agent]],
-      neighbourContents
+      cellState.contents.asInstanceOf[AgentContainer[Agent]],
+      neighbourContents.asInstanceOf[Map[GridDirection, AgentContainer[Agent]]]
     )
   }
 
@@ -36,19 +36,8 @@ final case class ParticleAgentPlanCreator() extends PlanCreator[SPPAgentConfig] 
       iteration: Long,
       cellId: GridCellId,
       agentContainer: AgentContainer[A],
-      neighbourContents: Map[Direction, CellContents]
-  )(implicit config: SPPAgentConfig): (Plans, Metrics) = {
-
-    val neighbourAgents: Iterable[A] = neighbourContents
-      .map({ case (direction, contents) =>
-        createWrappedAgentViews(
-          cellId,
-          direction.asInstanceOf[GridDirection],
-          contents.asInstanceOf[AgentContainer[A]]
-        )
-      })
-      .reduce(_ ++ _)
-
+      neighbourContents: Map[GridDirection, AgentContainer[A]]
+  )(implicit config: ParticleAgentConfig): (Plans, Metrics) = {
     val temporaryQuadtree = new QuadTree[A](
       center = Point(
         agentContainer.xMin + 0.5 * agentContainer.size,
@@ -57,17 +46,23 @@ final case class ParticleAgentPlanCreator() extends PlanCreator[SPPAgentConfig] 
       halfDim = 1.5 * agentContainer.size + 1e-7
     )
 
-    val localAgents = agentContainer.agents
-    val agentsInRange = neighbourAgents ++ localAgents
+    val neighbourAgents = neighbourContents
+      .map({ case (direction, contents) =>
+        createWrappedAgentViews(cellId, direction, contents).foreach(agent =>
+          temporaryQuadtree.insert(Point(agent.position(0), agent.position(1)), agent)
+        )
+      })
 
-    agentsInRange.foreach(agent =>
+    val localAgents = agentContainer.agents
+    // val agentsInRange = neighbourAgents ++ localAgents
+
+    localAgents.foreach(agent =>
       temporaryQuadtree.insert(Point(agent.position(0), agent.position(1)), agent)
     )
 
     val worldWidth = config.worldWidth * config.agentContainerSize
     val worldHeight = config.worldHeight * config.agentContainerSize
 
-    // val movedLocalAgents: Set[A] =
     val movedLocalAgents =
       localAgents
         .map(agent => {
@@ -76,16 +71,9 @@ final case class ParticleAgentPlanCreator() extends PlanCreator[SPPAgentConfig] 
             .map(_._2)
             .filter(_ != agent)
           val updatedAgent = agentContainer.behaviour.update(agent, conspecifics)
-          val movedAgent = agentContainer.behaviour.move(updatedAgent, config.timestepLength)
+          val movedAgent = agentContainer.behaviour.move(updatedAgent, config.timestepDuration)
 
           movedAgent
-
-          // val agentX = ((movedAgent.position(0) % worldWidth) + worldWidth) % worldWidth
-          // val agentY = ((movedAgent.position(1) % worldHeight) + worldHeight) % worldHeight
-          // println(agentX, agentY)
-          //
-          // agentContainer.behaviour.translate(movedAgent, DenseVector(agentX, agentY))
-
         })
         .groupMap(agent => {
           val xShift =
@@ -134,7 +122,7 @@ final case class ParticleAgentPlanCreator() extends PlanCreator[SPPAgentConfig] 
       currentCellId: GridCellId,
       neighbourDirection: GridDirection,
       agentContainer: AgentContainer[A]
-  )(implicit config: SPPAgentConfig): Iterable[A] = {
+  )(implicit config: ParticleAgentConfig): Iterable[A] = {
     val horizontalWrapAroundDistance = config.worldWidth * config.agentContainerSize
 
     val horizontalTranslation =
@@ -165,23 +153,25 @@ final case class ParticleAgentPlanCreator() extends PlanCreator[SPPAgentConfig] 
 
   }
 
+  // private def getAgentsInRange()
+
   private def computeMetrics[A <: Agent](
       agents: Iterable[A],
       temporaryQuadtree: QuadTree[A]
-  )(implicit config: SPPAgentConfig): ParticleAgentMetrics = {
+  )(implicit config: ParticleAgentConfig): ParticleAgentMetrics = {
     if (agents.size == 0) return ParticleAgentMetrics.empty
 
-    val neighbourhoodOrders = agents
-      .map(agent => {
-        norm(
-          temporaryQuadtree
-            .knnSearch(Point(agent.position(0), agent.position(1)), config.localOrderNeighbours + 1)
-            .map(_._2.direction)
-            .reduce(_ + _)
-        ) / (config.localOrderNeighbours + 1)
-      })
-
-    val localOrder = neighbourhoodOrders.sum / neighbourhoodOrders.size
+    // val neighbourhoodOrders = agents
+    //   .map(agent => {
+    //     norm(
+    //       temporaryQuadtree
+    //         .knnSearch(Point(agent.position(0), agent.position(1)), config.localOrderNeighbours + 1)
+    //         .map(_._2.direction)
+    //         .reduce(_ + _)
+    //     ) / (config.localOrderNeighbours + 1)
+    //   })
+    //
+    // val localOrder = neighbourhoodOrders.sum / neighbourhoodOrders.size
 
     val directionSum = agents.map(_.direction).reduce(_ + _)
 
@@ -189,8 +179,8 @@ final case class ParticleAgentPlanCreator() extends PlanCreator[SPPAgentConfig] 
 
     ParticleAgentMetrics.init(
       agents.size,
-      agents.size.toDouble / config.population,
-      localOrder,
+      agents.size.toDouble / config.agentAmount,
+      1.0,
       cellOrder,
       directionSum
     )

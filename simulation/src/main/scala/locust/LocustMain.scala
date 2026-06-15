@@ -53,7 +53,7 @@ object LocustMain extends LazyLogging {
       )
     })
 
-    GuiCellParticles(particles, container.particlesColor)
+    GuiCellParticles(particles)
   }
 
   // private def cellStatePayloader(cellState: CellState): GuiCellColor = {
