@@ -6,7 +6,7 @@ import pl.edu.agh.locust.config.ParticleAgentConfig
 import pl.edu.agh.xinuk.algorithm.Metrics
 import pl.edu.agh.locust.algorithm.ParticleAgentMetrics
 import pl.edu.agh.locust.algorithm.ParticleAgentUpdate._
-import pl.edu.agh.locust.model.{Agent, AgentContainer, SPPAgent}
+import pl.edu.agh.locust.model.{ParticleAgent, AgentContainer}
 import java.awt.Color
 
 final case class ParticleAgentPlanResolver() extends PlanResolver[ParticleAgentConfig] {
@@ -23,7 +23,7 @@ final case class ParticleAgentPlanResolver() extends PlanResolver[ParticleAgentC
     (result, ParticleAgentMetrics.empty)
   }
 
-  private def applyContainerUpdate[A <: Agent](
+  private def applyContainerUpdate[A <: ParticleAgent](
       iteration: Long,
       contents: CellContents,
       addAgents: AddAgents[A]

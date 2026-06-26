@@ -7,8 +7,6 @@ import pl.edu.agh.xinuk.model.{CellContents, CellState, WorldBuilder}
 import pl.edu.agh.xinuk.model.grid.{GridCellId, GridWorldBuilder}
 import pl.edu.agh.locust.config.ParticleAgentConfig
 import pl.edu.agh.locust.model.AgentContainer
-import pl.edu.agh.locust.model.SPPAgent
-import pl.edu.agh.locust.model.SPPAgent.Behaviour
 import breeze.linalg.{normalize, norm}
 import breeze.linalg.DenseVector
 import breeze.numerics.cos
@@ -20,6 +18,7 @@ object ParticleAgentWorldCreator extends WorldCreator[ParticleAgentConfig] {
 
   override def prepareWorld()(implicit config: ParticleAgentConfig): WorldBuilder = {
     val worldBuilder = GridWorldBuilder().withGridConnections().withWrappedBoundaries()
+    config.particleAgentFactory.initAgentCompanion()
 
     val agents = List
       .tabulate(config.agentAmount)(i => {
@@ -33,8 +32,7 @@ object ParticleAgentWorldCreator extends WorldCreator[ParticleAgentConfig] {
         val noiseAngle = (config.random.nextDouble() * 2 * Pi) - Pi
         val agentAngle = noiseAngle * 0.5
         val agentDirection = DenseVector(cos(agentAngle), sin(agentAngle))
-
-        SPPAgent(agentPosition, agentDirection, i)
+        config.particleAgentFactory.instantiateAgent(agentPosition, agentDirection, i)
       })
       .groupBy(agent => {
         (
@@ -70,7 +68,7 @@ object ParticleAgentWorldCreator extends WorldCreator[ParticleAgentConfig] {
       val contents = AgentContainer(
         agents.getOrElse((x, y), List.empty),
         -1,
-        SPPAgent.Behaviour,
+        config.particleAgentFactory.getAgentBehaviour(),
         config.agentContainerSize,
         x * config.agentContainerSize,
         y * config.agentContainerSize

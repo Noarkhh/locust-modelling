@@ -12,9 +12,8 @@ import pl.edu.agh.xinuk.model.grid.GridDirection
 import pl.edu.agh.xinuk.model.grid.GridDirection._
 
 import pl.edu.agh.locust.algorithm.ParticleAgentUpdate._
-import pl.edu.agh.locust.model.{AgentContainer, AgentBehaviour, Agent}
+import pl.edu.agh.locust.model.{AgentContainer, AgentBehaviour, ParticleAgent}
 import pl.edu.agh.locust.config.ParticleAgentConfig
-import pl.edu.agh.locust.model.SPPAgent
 import quadtree.{QuadTree, Point}
 
 final case class ParticleAgentPlanCreator() extends PlanCreator[ParticleAgentConfig] {
@@ -27,12 +26,12 @@ final case class ParticleAgentPlanCreator() extends PlanCreator[ParticleAgentCon
     createContainerPlans(
       iteration,
       cellId.asInstanceOf[GridCellId],
-      cellState.contents.asInstanceOf[AgentContainer[Agent]],
-      neighbourContents.asInstanceOf[Map[GridDirection, AgentContainer[Agent]]]
+      cellState.contents.asInstanceOf[AgentContainer[ParticleAgent]],
+      neighbourContents.asInstanceOf[Map[GridDirection, AgentContainer[ParticleAgent]]]
     )
   }
 
-  private def createContainerPlans[A <: Agent](
+  private def createContainerPlans[A <: ParticleAgent](
       iteration: Long,
       cellId: GridCellId,
       agentContainer: AgentContainer[A],
@@ -118,7 +117,7 @@ final case class ParticleAgentPlanCreator() extends PlanCreator[ParticleAgentCon
 
   }
 
-  private def createWrappedAgentViews[A <: Agent](
+  private def createWrappedAgentViews[A <: ParticleAgent](
       currentCellId: GridCellId,
       neighbourDirection: GridDirection,
       agentContainer: AgentContainer[A]
@@ -155,7 +154,7 @@ final case class ParticleAgentPlanCreator() extends PlanCreator[ParticleAgentCon
 
   // private def getAgentsInRange()
 
-  private def computeMetrics[A <: Agent](
+  private def computeMetrics[A <: ParticleAgent](
       agents: Iterable[A],
       temporaryQuadtree: QuadTree[A]
   )(implicit config: ParticleAgentConfig): ParticleAgentMetrics = {
@@ -186,7 +185,7 @@ final case class ParticleAgentPlanCreator() extends PlanCreator[ParticleAgentCon
     )
   }
 
-  private def redistributeAgents[A <: Agent](
+  private def redistributeAgents[A <: ParticleAgent](
       agentContainer: AgentContainer[A],
       agents: Set[A]
   ): Seq[(Option[Direction], Plan)] = {

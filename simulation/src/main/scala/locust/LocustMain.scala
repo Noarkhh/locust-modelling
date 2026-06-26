@@ -10,7 +10,7 @@ import pl.edu.agh.xinuk.simulation.GuiCellColor
 import pl.edu.agh.xinuk.algorithm.Metrics
 import pl.edu.agh.xinuk.simulation.{GuiCellParticles, GuiParticle}
 
-import pl.edu.agh.locust.model.{Agent, AgentContainer}
+import pl.edu.agh.locust.model.{ParticleAgent, AgentContainer}
 import pl.edu.agh.locust.algorithm.{
   ParticleAgentMetrics,
   ParticleAgentPlanCreator,
@@ -18,12 +18,33 @@ import pl.edu.agh.locust.algorithm.{
   ParticleAgentWorldCreator
 }
 import pl.edu.agh.locust.model.SPPAgent
+import scala.math.Pi
+
+import breeze.numerics.atan2
+import breeze.numerics.acos
+import breeze.linalg.DenseVector
+import pl.edu.agh.locust.utils.ImplicitVectorOps.DenseVectorOps
 
 object LocustMain extends LazyLogging {
   private val configPrefix = "particle-agent"
 
   def main(args: Array[String]): Unit = {
     import pl.edu.agh.xinuk.config.ValueReaders._
+    import pl.edu.agh.locust.config.ValueReaders._
+    // println(atan2(0, 1) * 180 / Pi)
+    // println(atan2(1, 1) * 180 / Pi)
+    // println(atan2(1, 0) * 180 / Pi)
+    // println(atan2(1, -1) * 180 / Pi)
+    // println(atan2(0, -1) * 180 / Pi)
+    // println(atan2(-1, -1) * 180 / Pi)
+    // println(atan2(-1, 0) * 180 / Pi)
+    // println(atan2(-1, 1) * 180 / Pi)
+    //
+    // val vec1 = DenseVector[Double](1.0, 0.0).normalize()
+    // val vec2 = DenseVector[Double](1.0, -1.0).normalize()
+
+    // println(acos(vec1.dot(vec2)) * 180 / Pi)
+
     new Simulation(
       configPrefix,
       ParticleAgentMetrics.MetricHeaders,
@@ -38,7 +59,7 @@ object LocustMain extends LazyLogging {
 
   private def cellStatePayloader(cellState: CellState): GuiCellParticles = {
 
-    val container = cellState.contents.asInstanceOf[AgentContainer[SPPAgent]]
+    val container = cellState.contents.asInstanceOf[AgentContainer[ParticleAgent]]
 
     val particles = container.agents.map(agent => {
       if (
