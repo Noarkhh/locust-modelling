@@ -160,17 +160,17 @@ final case class ParticleAgentPlanCreator() extends PlanCreator[ParticleAgentCon
   )(implicit config: ParticleAgentConfig): ParticleAgentMetrics = {
     if (agents.size == 0) return ParticleAgentMetrics.empty
 
-    // val neighbourhoodOrders = agents
-    //   .map(agent => {
-    //     norm(
-    //       temporaryQuadtree
-    //         .knnSearch(Point(agent.position(0), agent.position(1)), config.localOrderNeighbours + 1)
-    //         .map(_._2.direction)
-    //         .reduce(_ + _)
-    //     ) / (config.localOrderNeighbours + 1)
-    //   })
-    //
-    // val localOrder = neighbourhoodOrders.sum / neighbourhoodOrders.size
+    val neighbourhoodOrders = agents
+      .map(agent => {
+        norm(
+          temporaryQuadtree
+            .knnSearch(Point(agent.position(0), agent.position(1)), config.localOrderNeighbours + 1)
+            .map(_._2.direction)
+            .reduce(_ + _)
+        ) / (config.localOrderNeighbours + 1)
+      })
+
+    val localOrder = neighbourhoodOrders.sum / neighbourhoodOrders.size
 
     val directionSum = agents.map(_.direction).reduce(_ + _)
 
@@ -179,7 +179,7 @@ final case class ParticleAgentPlanCreator() extends PlanCreator[ParticleAgentCon
     ParticleAgentMetrics.init(
       agents.size,
       agents.size.toDouble / config.agentAmount,
-      1.0,
+      localOrder,
       cellOrder,
       directionSum
     )

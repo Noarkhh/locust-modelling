@@ -19,16 +19,17 @@ final case class SpinSystemAgent(
 ) extends ParticleAgent
 
 object SpinSystemAgent {
-  var allocentricNeuronAngles: Iterable[Double] = Seq.empty
+  var allocentricNeuronAngles: Seq[Double] = Seq.empty
   var synapticConnectivity: Seq[Double] = Seq.empty
 
   def init()(implicit config: ParticleAgentConfig) = {
     val neuronsAngleStep = (2 * Pi) / config.neuronsAmount
     allocentricNeuronAngles = Range(0, config.neuronsAmount).map(_ * neuronsAngleStep)
     allocentricNeuronAngles = Range(0, config.neuronsAmount).map(_ * neuronsAngleStep)
-    synapticConnectivity = allocentricNeuronAngles
-      .map(neuronAngle => cos(Pi * pow(neuronAngle / Pi, config.synapticConnectivityCoefficient)))
-      .toSeq
+    synapticConnectivity = (0.0 +: allocentricNeuronAngles.tail
+      .map(neuronAngle =>
+        cos(Pi * pow(neuronAngle / Pi, config.synapticConnectivityCoefficient))
+      )).toSeq
     // synapticConnectivity.foreach(i => print(s" $i"))
     // println()
   }
@@ -144,27 +145,49 @@ object SpinSystemAgent {
       for (iteration <- 0 until config.neuralDynamicIterationsPerTimestep) {
         val neuronToFlip = config.random.nextInt(config.neuronsAmount)
 
-        val hamiltonianBefore = calculateHamiltonian(neuronSpinStates, externalStimuli)
-        neuronSpinStates(neuronToFlip) *= -1
-        val hamiltonianAfter = calculateHamiltonian(neuronSpinStates, externalStimuli)
+        // val hamiltonianBefore = calculateHamiltonian(neuronSpinStates, externalStimuli)
+        // neuronSpinStates(neuronToFlip) *= -1
+        // val hamiltonianAfter = calculateHamiltonian(neuronSpinStates, externalStimuli)
+        // neuronSpinStates(neuronToFlip) *= -1
+        // val deltaHamiltonian = hamiltonianAfter - hamiltonianBefore
+        val deltaHamiltonian =
+          calculateDeltaHamiltonian(neuronToFlip, neuronSpinStates, externalStimuli)
         val flipProbability = exp(
-          -config.inverseTemperatureCoefficient * (hamiltonianAfter - hamiltonianBefore)
+          -config.inverseTemperatureCoefficient * deltaHamiltonian
         )
-        // if (agentId == 0) {
+        // if (agentId == 0 && iteration == 0) {
         //   println(f"externalStimuli: ")
         //   externalStimuli.foreach(i => print(f" $i%.3f"))
         //   println()
-        //   println(f"H1 = $hamiltonianBefore%.5f H2 = $hamiltonianAfter%.5f")
+        // println(f"H1 = $hamiltonianBefore%.5f H2 = $hamiltonianAfter%.5f")
+        //   println(f"dH = $deltaHamiltonian%.3f")
         //   println(f"p(flip) = $flipProbability%.3f")
         // }
-        if (config.random.nextDouble() > flipProbability) neuronSpinStates(neuronToFlip) *= -1
+        if (config.random.nextDouble() < flipProbability) neuronSpinStates(neuronToFlip) *= -1
       }
+    }
+
+    private def calculateDeltaHamiltonian(
+        selectedNeuron: Int,
+        neuronSpinStates: Array[Int],
+        externalStimuli: Seq[Double]
+    )(implicit config: ParticleAgentConfig): Double = {
+      (2 * neuronSpinStates(selectedNeuron)) *
+        (
+          neuronSpinStates.zipWithIndex
+            .map({ case (jSpinState, j) =>
+              getNeuronPairConnectivity(selectedNeuron, j) * jSpinState
+            })
+            .sum / config.neuronsAmount +
+            externalStimuli(selectedNeuron) -
+            config.neuralInhibitionCoefficient
+        )
     }
 
     private def calculateHamiltonian(
         neuronSpinStates: Array[Int],
         externalStimuli: Seq[Double]
-    )(implicit config: ParticleAgentConfig) = {
+    )(implicit config: ParticleAgentConfig): Double = {
       -neuronSpinStates.zipWithIndex
         .map({ case (iSpinState, i) =>
           val connectivityFactor =

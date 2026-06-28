@@ -67,12 +67,12 @@ final case class ParticleAgentConfig(
     resumeMarchProbabilityPerSecond: Double,
     // Spin system agent config
     neuronsAmount: Int,
-    neuralDynamicIterationsPerSecond: Int,
+    neuralDynamicIterationsPerNeuronPerSecond: Int,
     spatialDiscretizationCoefficient: Double,
     synapticConnectivityCoefficient: Double,
     inverseTemperatureCoefficient: Double,
     neuralInhibitionCoefficient: Double,
-    externalStimulusStrength: Double,
+    totalSocialAttraction: Double,
     allocentricReferenceFrame: Boolean
 ) extends XinukConfig {
   val random: Random = new SecureRandom
@@ -80,8 +80,9 @@ final case class ParticleAgentConfig(
   val resumeMarchProbabilityPerTimestep: Double =
     1.0 - pow((1.0 - resumeMarchProbabilityPerSecond), timestepDuration)
   val neuralDynamicIterationsPerTimestep: Int =
-    (neuralDynamicIterationsPerSecond * timestepDuration).toInt
-  val receptiveFieldVariance = (spatialDiscretizationCoefficient * 2 * Pi) / neuronsAmount
+    (neuralDynamicIterationsPerNeuronPerSecond * timestepDuration * neuronsAmount).toInt
+  val receptiveFieldVariance = pow((spatialDiscretizationCoefficient * 2 * Pi) / neuronsAmount, 2)
+  val externalStimulusStrength = totalSocialAttraction / occlusionThreshold
 }
 
 sealed trait ParticleAgentFactory extends NamedEnum {
