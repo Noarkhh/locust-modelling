@@ -4,6 +4,7 @@ import breeze.linalg.{DenseVector, norm, normalize, sum, min, max}
 import breeze.numerics.{acos, cos, sin, atan2}
 import pl.edu.agh.locust.config.ParticleAgentConfig
 import pl.edu.agh.locust.utils.ImplicitVectorOps._
+import pl.edu.agh.locust.utils.Xorshift32
 import scala.math.Pi
 import breeze.numerics.sqrt
 import breeze.numerics.exp
@@ -19,8 +20,10 @@ final case class SpinSystemAgent(
 ) extends ParticleAgent
 
 object SpinSystemAgent {
-  var allocentricNeuronAngles: Seq[Double] = Seq.empty
-  var synapticConnectivity: Seq[Double] = Seq.empty
+  private var allocentricNeuronAngles: Seq[Double] = Seq.empty
+  private var synapticConnectivity: Seq[Double] = Seq.empty
+  private val rngState: ThreadLocal[Int] =
+    ThreadLocal.withInitial(() => scala.util.Random.nextInt())
 
   def init()(implicit config: ParticleAgentConfig) = {
     val neuronsAngleStep = (2 * Pi) / config.neuronsAmount
@@ -143,7 +146,7 @@ object SpinSystemAgent {
         agentId: Long
     )(implicit config: ParticleAgentConfig) = {
       for (iteration <- 0 until config.neuralDynamicIterationsPerTimestep) {
-        val neuronToFlip = config.random.nextInt(config.neuronsAmount)
+        val neuronToFlip = Xorshift32.nextInt(rngState, config.neuronsAmount)
 
         // val hamiltonianBefore = calculateHamiltonian(neuronSpinStates, externalStimuli)
         // neuronSpinStates(neuronToFlip) *= -1
@@ -163,7 +166,7 @@ object SpinSystemAgent {
         //   println(f"dH = $deltaHamiltonian%.3f")
         //   println(f"p(flip) = $flipProbability%.3f")
         // }
-        if (config.random.nextDouble() < flipProbability) neuronSpinStates(neuronToFlip) *= -1
+        if (Xorshift32.nextFloat(rngState) < flipProbability) neuronSpinStates(neuronToFlip) *= -1
       }
     }
 
