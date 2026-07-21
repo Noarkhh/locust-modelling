@@ -30,7 +30,7 @@ object ParticleAgentWorldCreator extends WorldCreator[ParticleAgentConfig] {
         val agentPosition = DenseVector(agentX, agentY)
 
         val noiseAngle = (config.random.nextDouble() * 2 * Pi) - Pi
-        val agentAngle = noiseAngle * 0.5
+        val agentAngle = noiseAngle * 0.25
         val agentDirection = DenseVector(cos(agentAngle), sin(agentAngle))
         config.particleAgentFactory.instantiateAgent(agentPosition, agentDirection, i)
       })

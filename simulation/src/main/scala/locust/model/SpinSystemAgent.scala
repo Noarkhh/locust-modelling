@@ -22,7 +22,6 @@ final case class SpinSystemAgent(
 
 object SpinSystemAgent {
   private var allocentricNeuronAngles: Seq[Double] = Seq.empty
-  private var synapticConnectivity: Seq[Double] = Seq.empty
   private val rngState: ThreadLocal[Int] =
     ThreadLocal.withInitial(() => scala.util.Random.nextInt())
 
@@ -44,10 +43,6 @@ object SpinSystemAgent {
       }
     })
 
-    synapticConnectivity = (0.0 +: allocentricNeuronAngles.tail
-      .map(neuronAngle =>
-        cos(Pi * pow(neuronAngle / Pi, config.synapticConnectivityCoefficient))
-      )).toSeq
   }
 
   def apply(
@@ -133,14 +128,6 @@ object SpinSystemAgent {
         cos(angle) * vector(0) - sin(angle) * vector(1),
         sin(angle) * vector(0) + cos(angle) * vector(1)
       )
-
-    private def getNeuronPairConnectivity(neuron1Index: Int, neuron2Index: Int): Double = {
-      val neuronsGap = min(
-        abs(neuron1Index - neuron2Index),
-        synapticConnectivity.size - abs(neuron1Index - neuron2Index)
-      )
-      synapticConnectivity(neuronsGap)
-    }
 
     private def runNeuralDynamics(
         neuronSpinStates: DenseVector[Double],

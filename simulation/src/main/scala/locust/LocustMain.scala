@@ -24,6 +24,7 @@ import breeze.numerics.atan2
 import breeze.numerics.acos
 import breeze.linalg.DenseVector
 import pl.edu.agh.locust.utils.ImplicitVectorOps.DenseVectorOps
+import breeze.numerics.abs
 
 object LocustMain extends LazyLogging {
   private val configPrefix = "particle-agent"
@@ -44,6 +45,21 @@ object LocustMain extends LazyLogging {
     // val vec2 = DenseVector[Double](1.0, -1.0).normalize()
 
     // println(acos(vec1.dot(vec2)) * 180 / Pi)
+    //
+    // val neuronsAngleStep = (2 * Pi) / 100
+    // val allocentricNeuronAngles = Range(0, 100).map(_ * neuronsAngleStep).toArray
+    // val direction = DenseVector[Double](1.0, 0.0)
+    // allocentricNeuronAngles
+    //   .map(neuronAngle => {
+    //     val headingAngle = atan2(direction(1), direction(0))
+    //     val angleBias = abs(Pi - abs(headingAngle - neuronAngle)) / Pi
+    //     // java.util.random.RandomGenerator.getDefault.nextGaussian() +
+    //     angleBias
+    //   })
+    //   .zipWithIndex
+    //   .foreach({ case (i, a) => println(f"${a}%d: ${i}%.2f") })
+    //
+    // return
 
     new Simulation(
       configPrefix,

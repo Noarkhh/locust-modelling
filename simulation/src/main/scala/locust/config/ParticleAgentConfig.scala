@@ -15,6 +15,7 @@ import pl.edu.agh.locust.model.ParticleAgent
 import breeze.linalg.DenseVector
 import pl.edu.agh.locust.model.{SPPAgent, SpinSystemAgent}
 import pl.edu.agh.locust.model.AgentBehaviour
+import pl.edu.agh.locust.model.NeuralFieldAgent
 
 final case class ParticleAgentConfig(
     // Generic xinuk config
@@ -134,6 +135,21 @@ object ParticleAgentFactory extends AbstractNamedEnumCompanion[ParticleAgentFact
       SpinSystemAgent.Behaviour.asInstanceOf[AgentBehaviour[ParticleAgent]]
     override def initAgentCompanion()(implicit config: ParticleAgentConfig): Unit =
       SpinSystemAgent.init()
+  }
+
+  case object NeuralFieldAgentFactory extends ParticleAgentFactory {
+    override def name: String = "NeuralFieldAgentFactory"
+    override def instantiateAgent(
+        position: DenseVector[Double],
+        direction: DenseVector[Double],
+        id: Long
+    )(implicit config: ParticleAgentConfig): ParticleAgent = {
+      NeuralFieldAgent(position, direction, id)
+    }
+    override def getAgentBehaviour(): AgentBehaviour[ParticleAgent] =
+      NeuralFieldAgent.Behaviour.asInstanceOf[AgentBehaviour[ParticleAgent]]
+    override def initAgentCompanion()(implicit config: ParticleAgentConfig): Unit =
+      NeuralFieldAgent.init()
   }
 }
 

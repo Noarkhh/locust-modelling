@@ -9,6 +9,7 @@ lazy val locustSimulation = (project in file("."))
     scalaVersion := "2.13.17",
     Compile / mainClass := Some("pl.edu.agh.locust.LocustMain"),
     run / fork := true,
+    javaOptions += "--add-modules=jdk.incubator.vector",
     libraryDependencies ++= Seq(
       "org.scalanlp" %% "breeze" % "2.1.0",
       "ch.qos.logback" % "logback-classic" % "1.2.3"
