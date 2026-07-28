@@ -66,15 +66,19 @@ final case class ParticleAgentConfig(
     activityPeriod: Double,
     minimalInactivityPeriod: Double,
     resumeMarchProbabilityPerSecond: Double,
-    // Spin system agent config
+    // Ring Attractor agent config
     neuronsAmount: Int,
-    neuralDynamicIterationsPerNeuronPerSecond: Int,
-    spatialDiscretizationCoefficient: Double,
     synapticConnectivityCoefficient: Double,
     inverseTemperatureCoefficient: Double,
     neuralInhibitionCoefficient: Double,
     totalSocialAttraction: Double,
-    allocentricReferenceFrame: Boolean
+    allocentricReferenceFrame: Boolean,
+    // Spin system agent config
+    neuralDynamicIterationsPerNeuronPerSecond: Int,
+    // Neural Field agent config
+    antiGoalOverrideRange: Double,
+    antiGoalStimulusStrength: Double,
+    receptiveFieldStd: Double
 ) extends XinukConfig {
   val random: Random = new SecureRandom
   val hopDurationTimesteps: Int = (hopDuration / timestepDuration).toInt
@@ -82,7 +86,8 @@ final case class ParticleAgentConfig(
     1.0 - pow((1.0 - resumeMarchProbabilityPerSecond), timestepDuration)
   val neuralDynamicIterationsPerTimestep: Int =
     (neuralDynamicIterationsPerNeuronPerSecond * timestepDuration * neuronsAmount).toInt
-  val receptiveFieldVariance = pow((spatialDiscretizationCoefficient * 2 * Pi) / neuronsAmount, 2)
+  // val receptiveFieldVariance = pow((spatialDiscretizationCoefficient * 2 * Pi) / neuronsAmount, 2)
+  val receptiveFieldVariance = pow(receptiveFieldStd, 2)
   val externalStimulusStrength = totalSocialAttraction / occlusionThreshold
 }
 
