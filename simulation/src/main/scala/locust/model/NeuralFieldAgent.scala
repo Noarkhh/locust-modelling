@@ -46,8 +46,7 @@ object NeuralFieldAgent {
       allocentricNeuronAngles.map(neuronAngle => {
         val headingAngle = atan2(direction(1), direction(0))
         val angleBias = abs(Pi - abs(headingAngle - neuronAngle)) / Pi
-        config.random.nextGaussian() * 0.1
-        // angleBias
+        config.random.nextGaussian() * 0.75 + angleBias * 0.25
       })
     )
     NeuralFieldAgent(position, direction, id, config.averageSpeed, membranePotentials)
@@ -99,25 +98,23 @@ object NeuralFieldAgent {
             (2 * config.receptiveFieldVariance)
         )
 
-      val neuronsExternalStimuli = sum(externalStimuli, Axis._1)
+      val neuronsExternalStimuli = sum(externalStimuli(*, ::))
 
       val nextMembranePotentials = calculateNextMembranePotentials(
         agent.membranePotentials,
         neuronsExternalStimuli
       )
 
-      if (agent.id == 0) println(nextMembranePotentials)
-
       val activations =
         max(tanh(nextMembranePotentials * config.inverseTemperatureCoefficient), 0.0)
 
       val neuralForces = egocentricNeuronDirectionsMat(::, *) *:* activations
 
-      val neuralForce = sum(neuralForces, Axis._0).t
+      val neuralForce = sum(neuralForces(::, *)).t
 
       val forceNorm = neuralForce.norm()
 
-      if (forceNorm.isNaN() || forceNorm < 1e-9)
+      if (forceNorm.isNaN || forceNorm < 1e-9)
         agent.copy(membranePotentials = nextMembranePotentials)
       else {
         val velocity = (config.averageSpeed / config.neuronsAmount) * neuralForce
