@@ -46,7 +46,9 @@ object NeuralFieldAgent {
       allocentricNeuronAngles.map(neuronAngle => {
         val headingAngle = atan2(direction(1), direction(0))
         val angleBias = abs(Pi - abs(headingAngle - neuronAngle)) / Pi
-        config.random.nextGaussian() * 0.75 + angleBias * 0.25
+        config.random.nextGaussian() * 0.05 + angleBias * 0.95
+        // config.random.nextGaussian() * 0.5 + angleBias * 0.5
+        // config.random.nextGaussian() * 0.75 + angleBias * 0.25
       })
     )
     NeuralFieldAgent(position, direction, id, config.averageSpeed, membranePotentials)
@@ -57,12 +59,18 @@ object NeuralFieldAgent {
     override def update(agent: NeuralFieldAgent, others: Iterable[NeuralFieldAgent])(implicit
         config: ParticleAgentConfig
     ): NeuralFieldAgent = {
-      val directionsToOthersMat = DenseMatrix.zeros[Double](2, others.size)
-      val distancesToOthersVec = DenseVector.zeros[Double](others.size)
-      val egocentricNeuronDirectionsMat = DenseMatrix.zeros[Double](allocentricNeuronAngles.size, 2)
-
-      val referenceVector =
+      val referenceVector: DenseVector[Double] =
         if (config.allocentricReferenceFrame) DenseVector[Double](1.0, 0.0) else agent.direction
+
+      // (2, others)
+      val directionsToOthersMat = DenseMatrix.zeros[Double](2, others.size)
+      // (others)
+      val distancesToOthersVec = DenseVector.zeros[Double](others.size)
+      // (others)
+      val egocentricAnglesToOthersVec = DenseVector.zeros[Double](others.size)
+
+      // (others)
+      val isOtherPursuing = DenseVector.zeros[Boolean](others.size)
 
       others.zipWithIndex.foreach({
         case (other, i) => {
@@ -79,45 +87,92 @@ object NeuralFieldAgent {
 
           directionsToOthersMat(0, i) = directionToOther(0)
           directionsToOthersMat(1, i) = directionToOther(1)
+
+          val egocentricAngleToOther =
+            acos(max(min(agent.direction dot directionToOther, 1.0), -1.0))
+
+          egocentricAnglesToOthersVec(i) = egocentricAngleToOther
+
+          val otherAngleToAgent =
+            acos(max(min(agent.direction dot other.direction, 1.0), -1.0))
+
+          isOtherPursuing(i) = (distanceToOther < config.antiGoalOverrideRange) &&
+            (egocentricAngleToOther > config.antiGoalAngleRangeStart) &&
+            (otherAngleToAgent < config.pursuerHeadingAngleEnd)
+
         }
       })
+      // if (agent.id == 0) println(egocentricAnglesToOthersVec)
 
+      // (neurons, 2)
+      val egocentricNeuronDirectionsMat = DenseMatrix.zeros[Double](allocentricNeuronAngles.size, 2)
       allocentricNeuronAngles.zipWithIndex.foreach({ case (angle, i) =>
         val rotatedNeuronDirection = rotateVector(referenceVector, angle)
         egocentricNeuronDirectionsMat(i, 0) = rotatedNeuronDirection(0)
         egocentricNeuronDirectionsMat(i, 1) = rotatedNeuronDirection(1)
       })
 
-      val neuronTargetAngles = acos(
+      // (neurons, others)
+      val neuronTargetAngles: DenseMatrix[Double] = acos(
         max(min(egocentricNeuronDirectionsMat * directionsToOthersMat, 1.0), -1.0)
       )
 
-      val externalStimuli =
-        config.externalStimulusStrength * exp(
+      // val externalStimuliStrengths = DenseVector.fill(others.size) {
+      //   config.externalStimulusStrength
+      // }
+      // externalStimuliStrengths(distancesToOthersVec <:< config.antiGoalOverrideRange) =
+      //   config.antiGoalStimulusStrength
+
+      // (others)
+      val externalStimuliStrengths: DenseVector[Double] = DenseVector.tabulate(others.size) { i =>
+        {
+          // val angleToOther = acos()
+
+          if (isOtherPursuing(i)) {
+            // if (agent.id == 0) println("Aaa")
+            config.antiGoalStimulusStrength
+          } else config.externalStimulusStrength
+        }
+      }
+
+      // (neurons, others)
+      val receptiveFieldResponse: DenseMatrix[Double] =
+        exp(
           -pow(-neuronTargetAngles, 2) /
             (2 * config.receptiveFieldVariance)
         )
 
-      val neuronsExternalStimuli = sum(externalStimuli(*, ::))
+      // (neurons, others)
+      val externalStimuli: DenseMatrix[Double] =
+        receptiveFieldResponse(*, ::) *:* externalStimuliStrengths
 
+      // (neurons)
+      val neuronsExternalStimuli: DenseVector[Double] = sum(externalStimuli(*, ::))
+
+      // (neurons)
       val nextMembranePotentials = calculateNextMembranePotentials(
         agent.membranePotentials,
         neuronsExternalStimuli
       )
 
-      val activations =
+      // (neurons)
+      val activations: DenseVector[Double] =
         max(tanh(nextMembranePotentials * config.inverseTemperatureCoefficient), 0.0)
 
-      val neuralForces = egocentricNeuronDirectionsMat(::, *) *:* activations
+      // (neurons, 2)
+      val neuralForces: DenseMatrix[Double] = egocentricNeuronDirectionsMat(::, *) *:* activations
 
-      val neuralForce = sum(neuralForces(::, *)).t
+      // (2)
+      val neuralForce: DenseVector[Double] = sum(neuralForces(::, *)).t
 
-      val forceNorm = neuralForce.norm()
+      // ()
+      val forceNorm: Double = neuralForce.norm()
 
       if (forceNorm.isNaN || forceNorm < 1e-9)
         agent.copy(membranePotentials = nextMembranePotentials)
       else {
-        val velocity = (config.averageSpeed / config.neuronsAmount) * neuralForce
+        val velocity: DenseVector[Double] =
+          (config.averageSpeed / config.neuronsAmount) * neuralForce
         agent.copy(
           direction = velocity.normalize(),
           speed = velocity.norm(),

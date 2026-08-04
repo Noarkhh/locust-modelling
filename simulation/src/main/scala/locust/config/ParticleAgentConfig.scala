@@ -20,8 +20,9 @@ import pl.edu.agh.locust.model.NeuralFieldAgent
 final case class ParticleAgentConfig(
     // Generic xinuk config
     worldType: WorldType,
-    worldWidth: Int,
-    worldHeight: Int,
+    worldWidthMeters: Double,
+    worldHeightMeters: Double,
+    guiHeight: Int,
     iterationsNumber: Long,
     iterationFinishedLogFrequency: Long,
     skipEmptyLogs: Boolean,
@@ -33,7 +34,6 @@ final case class ParticleAgentConfig(
     isSupervisor: Boolean,
     shardingMod: Int,
     guiType: GuiType,
-    guiCellSize: Int,
     guiParticleSize: Int,
     guiStartIteration: Long,
     guiUpdateFrequency: Long,
@@ -47,7 +47,8 @@ final case class ParticleAgentConfig(
     agentAmount: Int,
     initialAreaCenterX: Double,
     initialAreaCenterY: Double,
-    initialAreaRadius: Double,
+    initialAreaRadiusX: Double,
+    initialAreaRadiusY: Double,
     averageSpeed: Double,
     // SPP agent config
     previousDirectionWeight: Double,
@@ -78,8 +79,13 @@ final case class ParticleAgentConfig(
     // Neural Field agent config
     antiGoalOverrideRange: Double,
     antiGoalStimulusStrength: Double,
-    receptiveFieldStd: Double
+    receptiveFieldStd: Double,
+    antiGoalAngleRangeStart: Double,
+    pursuerHeadingAngleEnd: Double
 ) extends XinukConfig {
+  val worldWidth: Int = (worldWidthMeters / agentContainerSize).toInt
+  val worldHeight: Int = (worldHeightMeters / agentContainerSize).toInt
+  val guiCellSize: Int = (guiHeight / worldHeight).toInt
   val random: Random = new SecureRandom
   val hopDurationTimesteps: Int = (hopDuration / timestepDuration).toInt
   val resumeMarchProbabilityPerTimestep: Double =

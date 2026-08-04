@@ -19,14 +19,15 @@ object ParticleAgentWorldCreator extends WorldCreator[ParticleAgentConfig] {
   override def prepareWorld()(implicit config: ParticleAgentConfig): WorldBuilder = {
     val worldBuilder = GridWorldBuilder().withGridConnections().withWrappedBoundaries()
     config.particleAgentFactory.initAgentCompanion()
+    val verticalScaleFactor = config.initialAreaRadiusY / config.initialAreaRadiusX
 
     val agents = List
       .tabulate(config.agentAmount)(i => {
-        val r = config.initialAreaRadius * sqrt(config.random.nextDouble())
+        val r = config.initialAreaRadiusX * sqrt(config.random.nextDouble())
         val theta = config.random.nextDouble() * 2 * Pi
 
         val agentX = config.initialAreaCenterX + r * cos(theta)
-        val agentY = config.initialAreaCenterY + r * sin(theta)
+        val agentY = config.initialAreaCenterY + r * sin(theta) * verticalScaleFactor
         val agentPosition = DenseVector(agentX, agentY)
 
         val noiseAngle = (config.random.nextDouble() * 2 * Pi) - Pi
