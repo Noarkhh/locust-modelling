@@ -101,6 +101,9 @@ object SPPAgent {
       agent.copy(position = newPosition)
     }
 
+    override def getSpeed(agent: SPPAgent)(implicit config: ParticleAgentConfig): Double =
+      config.averageSpeed
+
     private def calculateSocialForce(
         agent: SPPAgent,
         others: Iterable[SPPAgent]

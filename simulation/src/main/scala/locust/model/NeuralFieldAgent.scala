@@ -13,7 +13,8 @@ final case class NeuralFieldAgent(
     direction: DenseVector[Double],
     id: Long,
     speed: Double,
-    membranePotentials: DenseVector[Double]
+    membranePotentials: DenseVector[Double],
+    hopIterationsLeft: Int
 ) extends ParticleAgent
 
 object NeuralFieldAgent {
@@ -51,7 +52,7 @@ object NeuralFieldAgent {
         // config.random.nextGaussian() * 0.75 + angleBias * 0.25
       })
     )
-    NeuralFieldAgent(position, direction, id, config.averageSpeed, membranePotentials)
+    NeuralFieldAgent(position, direction, id, config.averageSpeed, membranePotentials, 0)
   }
 
   implicit case object Behaviour extends AgentBehaviour[NeuralFieldAgent] {
@@ -71,6 +72,8 @@ object NeuralFieldAgent {
 
       // (others)
       val isOtherPursuing = DenseVector.zeros[Boolean](others.size)
+
+      var isRepulsionZoneOccupied = false
 
       others.zipWithIndex.foreach({
         case (other, i) => {
@@ -96,9 +99,13 @@ object NeuralFieldAgent {
           val otherAngleToAgent =
             acos(max(min(agent.direction dot other.direction, 1.0), -1.0))
 
-          isOtherPursuing(i) = (distanceToOther < config.antiGoalOverrideRange) &&
+          if (
             (egocentricAngleToOther > config.antiGoalAngleRangeStart) &&
             (otherAngleToAgent < config.pursuerHeadingAngleEnd)
+          ) {
+            isOtherPursuing(i) = (distanceToOther < config.antiGoalOverrideRange)
+            if (distanceToOther < config.repulsionRange) isRepulsionZoneOccupied = true
+          }
 
         }
       })
@@ -131,7 +138,7 @@ object NeuralFieldAgent {
           if (isOtherPursuing(i)) {
             // if (agent.id == 0) println("Aaa")
             config.antiGoalStimulusStrength
-          } else config.externalStimulusStrength
+          } else config.totalSocialAttraction / others.size
         }
       }
 
@@ -162,21 +169,43 @@ object NeuralFieldAgent {
       // (neurons, 2)
       val neuralForces: DenseMatrix[Double] = egocentricNeuronDirectionsMat(::, *) *:* activations
 
+      if (agent.id == 0) println(activations)
+
       // (2)
       val neuralForce: DenseVector[Double] = sum(neuralForces(::, *)).t
 
       // ()
       val forceNorm: Double = neuralForce.norm()
 
+      val hopIterationsLeft =
+        if (agent.hopIterationsLeft > 0) {
+          agent.hopIterationsLeft - 1
+        } else {
+          val willHop =
+            if (isRepulsionZoneOccupied)
+              Xorshift32.nextFloat(rngState) < config.crowdedHopProbability
+            else Xorshift32.nextFloat(rngState) < config.hopProbability
+
+          if (willHop) {
+            config.hopDurationTimesteps
+          } else 0
+        }
+
       if (forceNorm.isNaN || forceNorm < 1e-9)
-        agent.copy(membranePotentials = nextMembranePotentials)
+        agent.copy(
+          membranePotentials = nextMembranePotentials,
+          hopIterationsLeft = hopIterationsLeft
+        )
       else {
         val velocity: DenseVector[Double] =
           (config.averageSpeed / config.neuronsAmount) * neuralForce
+        if (agent.id == 0) println(velocity.norm())
+        if (agent.id == 0) println(velocity)
         agent.copy(
           direction = velocity.normalize(),
           speed = velocity.norm(),
-          membranePotentials = nextMembranePotentials
+          membranePotentials = nextMembranePotentials,
+          hopIterationsLeft = hopIterationsLeft
         )
       }
 
@@ -185,7 +214,13 @@ object NeuralFieldAgent {
     override def move(agent: NeuralFieldAgent, deltaTime: Double)(implicit
         config: ParticleAgentConfig
     ): NeuralFieldAgent = {
-      val newPosition = agent.position + agent.direction * agent.speed * deltaTime
+      val speed =
+        if (agent.hopIterationsLeft <= 0) agent.speed
+        else {
+          config.hopSpeed
+        }
+
+      val newPosition = agent.position + agent.direction * speed * deltaTime
 
       agent.copy(position = newPosition)
     }
@@ -196,6 +231,9 @@ object NeuralFieldAgent {
     ): NeuralFieldAgent = {
       agent.copy(position = newPosition)
     }
+
+    override def getSpeed(agent: NeuralFieldAgent)(implicit config: ParticleAgentConfig): Double =
+      agent.speed
 
     private def rotateVector(vector: DenseVector[Double], angle: Double): DenseVector[Double] =
       DenseVector[Double](

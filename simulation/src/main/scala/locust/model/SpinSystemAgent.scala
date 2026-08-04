@@ -123,6 +123,9 @@ object SpinSystemAgent {
       agent.copy(position = newPosition)
     }
 
+    override def getSpeed(agent: SpinSystemAgent)(implicit config: ParticleAgentConfig): Double =
+      config.averageSpeed
+
     private def rotateVector(vector: DenseVector[Double], angle: Double): DenseVector[Double] =
       DenseVector[Double](
         cos(angle) * vector(0) - sin(angle) * vector(1),

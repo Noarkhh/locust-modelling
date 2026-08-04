@@ -14,6 +14,7 @@ trait AgentBehaviour[A <: ParticleAgent] {
   def update(agent: A, others: Iterable[A])(implicit config: ParticleAgentConfig): A
   def move(agent: A, deltaTime: Double)(implicit config: ParticleAgentConfig): A
   def translate(agent: A, newPosition: DenseVector[Double]): A
+  def getSpeed(agent: A)(implicit config: ParticleAgentConfig): Double
 }
 
 final case class AgentContainer[A <: ParticleAgent](

@@ -112,7 +112,7 @@ final case class ParticleAgentPlanCreator() extends PlanCreator[ParticleAgentCon
     // val plans = Plans(redistributeAgents(agentContainer, movedLocalAgents))
     val plans = Plans(movedLocalAgents)
 
-    (plans, computeMetrics(localAgents, temporaryQuadtree))
+    (plans, computeMetrics(localAgents, temporaryQuadtree, agentContainer.behaviour))
     // (Plans.empty, ParticleAgentMetrics.empty)
 
   }
@@ -156,7 +156,8 @@ final case class ParticleAgentPlanCreator() extends PlanCreator[ParticleAgentCon
 
   private def computeMetrics[A <: ParticleAgent](
       agents: Iterable[A],
-      temporaryQuadtree: QuadTree[A]
+      temporaryQuadtree: QuadTree[A],
+      agentBehaviour: AgentBehaviour[A]
   )(implicit config: ParticleAgentConfig): ParticleAgentMetrics = {
     if (agents.size == 0) return ParticleAgentMetrics.empty
 
@@ -176,12 +177,15 @@ final case class ParticleAgentPlanCreator() extends PlanCreator[ParticleAgentCon
 
     val cellOrder = norm(directionSum) / agents.size
 
+    val speedSum = agents.map(agentBehaviour.getSpeed(_)).sum
+
     ParticleAgentMetrics.init(
       agents.size,
       agents.size.toDouble / config.agentAmount,
       localOrder,
       cellOrder,
-      directionSum
+      directionSum,
+      speedSum
     )
   }
 

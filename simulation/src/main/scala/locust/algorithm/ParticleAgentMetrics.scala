@@ -9,7 +9,8 @@ final case class ParticleAgentMetrics(
     populationShare: Double,
     localOrders: Iterable[Double],
     cellOrders: Iterable[Double],
-    directionSum: DenseVector[Double]
+    directionSum: DenseVector[Double],
+    speedSum: Double
 ) extends Metrics {
 
   override def log: String = {
@@ -23,7 +24,8 @@ final case class ParticleAgentMetrics(
     "populationShare" -> populationShare,
     "averageLocalOrder" -> localOrders.sum / localOrders.size,
     "averageCellOrder" -> cellOrders.sum / cellOrders.size,
-    "globalOrder" -> norm(directionSum) / agentsCount
+    "globalOrder" -> norm(directionSum) / agentsCount,
+    "averageSpeed" -> speedSum / agentsCount
 
     // "directionSumX" -> directionSum(0),
     // "directionSumY" -> directionSum(1)
@@ -36,14 +38,16 @@ final case class ParticleAgentMetrics(
             otherPopulationShare,
             otherLocalOrders,
             otherCellOrders,
-            otherDirectionSum
+            otherDirectionSum,
+            otherSpeedSum
           ) =>
         ParticleAgentMetrics(
           agentsCount + otherAgentsCount,
           populationShare + otherPopulationShare,
           localOrders ++ otherLocalOrders,
           cellOrders ++ otherCellOrders,
-          directionSum + otherDirectionSum
+          directionSum + otherDirectionSum,
+          speedSum + otherSpeedSum
         )
     }
   }
@@ -51,7 +55,7 @@ final case class ParticleAgentMetrics(
 
 object ParticleAgentMetrics {
   private val Empty =
-    ParticleAgentMetrics(0, 0.0, Seq.empty, Seq.empty, DenseVector[Double](0.0, 0.0))
+    ParticleAgentMetrics(0, 0.0, Seq.empty, Seq.empty, DenseVector[Double](0.0, 0.0), 0.0)
 
   def empty: ParticleAgentMetrics = Empty
 
@@ -60,14 +64,16 @@ object ParticleAgentMetrics {
       populationShare: Double,
       localOrder: Double,
       cellOrder: Double,
-      directionSum: DenseVector[Double]
+      directionSum: DenseVector[Double],
+      speedSum: Double
   ): ParticleAgentMetrics =
     ParticleAgentMetrics(
       agentsCount,
       populationShare,
       Vector(localOrder),
       Vector(cellOrder),
-      directionSum
+      directionSum,
+      speedSum
     )
 
   val MetricHeaders = Vector(
