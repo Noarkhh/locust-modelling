@@ -17,7 +17,7 @@ import pl.edu.agh.locust.algorithm.{
   ParticleAgentPlanResolver,
   ParticleAgentWorldCreator
 }
-import pl.edu.agh.locust.model.SPPAgent
+import pl.edu.agh.locust.model.{NeuralFieldAgent, SPPAgent, SpinSystemAgent}
 import scala.math.Pi
 
 import breeze.numerics.atan2
@@ -84,9 +84,18 @@ object LocustMain extends LazyLogging {
         println("agent out of container")
       }
 
+      val (id, internalState) = agent match {
+        case nfa: NeuralFieldAgent => (nfa.id, Some(NeuralFieldAgent.activations(nfa)))
+        case spp: SPPAgent         => (spp.id, None)
+        case ssa: SpinSystemAgent  => (ssa.id, None)
+        case _                     => (-1L, None)
+      }
+
       GuiParticle(
         (agent.position(0) - container.xMin) / container.size,
-        (agent.position(1) - container.yMin) / container.size
+        (agent.position(1) - container.yMin) / container.size,
+        id,
+        internalState
       )
     })
 

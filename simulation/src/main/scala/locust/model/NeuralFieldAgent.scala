@@ -23,8 +23,10 @@ object NeuralFieldAgent {
     ThreadLocal.withInitial(() => scala.util.Random.nextInt())
 
   private var synapticConnectivityMatrix = DenseMatrix.zeros[Double](1, 1)
+  private var inverseTemperatureCoefficient: Double = 1.0
 
   def init()(implicit config: ParticleAgentConfig) = {
+    inverseTemperatureCoefficient = config.inverseTemperatureCoefficient
     val neuronsAngleStep = (2 * Pi) / config.neuronsAmount
     allocentricNeuronAngles = Range(0, config.neuronsAmount).map(_ * neuronsAngleStep).toArray
 
@@ -35,6 +37,9 @@ object NeuralFieldAgent {
         cos(Pi * pow(angleBetweenNeurons / Pi, config.synapticConnectivityCoefficient))
       })
   }
+
+  def activations(agent: NeuralFieldAgent): Vector[Double] =
+    max(tanh(agent.membranePotentials * inverseTemperatureCoefficient), 0.0).toArray.toVector
 
   def apply(
       position: DenseVector[Double],
@@ -64,11 +69,11 @@ object NeuralFieldAgent {
         if (config.allocentricReferenceFrame) DenseVector[Double](1.0, 0.0) else agent.direction
 
       // (2, others)
-      val directionsToOthersMat = DenseMatrix.zeros[Double](2, others.size)
+      val directionsToGoals = DenseMatrix.zeros[Double](2, others.size)
       // (others)
-      val distancesToOthersVec = DenseVector.zeros[Double](others.size)
+      val distancesToOthers = DenseVector.zeros[Double](others.size)
       // (others)
-      val egocentricAnglesToOthersVec = DenseVector.zeros[Double](others.size)
+      val egocentricAnglesToOthers = DenseVector.zeros[Double](others.size)
 
       // (others)
       val isOtherPursuing = DenseVector.zeros[Boolean](others.size)
@@ -79,7 +84,7 @@ object NeuralFieldAgent {
         case (other, i) => {
           val vectorToOther = other.position - agent.position
           val distanceToOther = vectorToOther.norm()
-          distancesToOthersVec(i) = distanceToOther
+          distancesToOthers(i) = distanceToOther
 
           val directionToOther =
             if (distanceToOther > 1e-9) vectorToOther / distanceToOther
@@ -88,46 +93,51 @@ object NeuralFieldAgent {
               DenseVector(cos(randomAngle), sin(randomAngle))
             }
 
-          directionsToOthersMat(0, i) = directionToOther(0)
-          directionsToOthersMat(1, i) = directionToOther(1)
-
           val egocentricAngleToOther =
             acos(max(min(agent.direction dot directionToOther, 1.0), -1.0))
 
-          egocentricAnglesToOthersVec(i) = egocentricAngleToOther
+          egocentricAnglesToOthers(i) = egocentricAngleToOther
 
           val otherAngleToAgent =
             acos(max(min(agent.direction dot other.direction, 1.0), -1.0))
 
           if (
             (egocentricAngleToOther > config.antiGoalAngleRangeStart) &&
-            (otherAngleToAgent < config.pursuerHeadingAngleEnd)
+            (otherAngleToAgent < config.pursuerHeadingAngleEnd) &&
+            (distanceToOther < config.antiGoalOverrideRange)
           ) {
-            isOtherPursuing(i) = (distanceToOther < config.antiGoalOverrideRange)
+            directionsToGoals(0, i) = -directionToOther(0)
+            directionsToGoals(1, i) = -directionToOther(1)
+            isOtherPursuing(i) = true
+
             if (distanceToOther < config.repulsionRange) isRepulsionZoneOccupied = true
+          } else {
+            directionsToGoals(0, i) = directionToOther(0)
+            directionsToGoals(1, i) = directionToOther(1)
+            isOtherPursuing(i) = false
           }
 
         }
       })
-      // if (agent.id == 0) println(egocentricAnglesToOthersVec)
+      // if (agent.id == 0) println(egocentricAnglesToOthers)
 
       // (neurons, 2)
-      val egocentricNeuronDirectionsMat = DenseMatrix.zeros[Double](allocentricNeuronAngles.size, 2)
+      val egocentricNeuronDirections = DenseMatrix.zeros[Double](allocentricNeuronAngles.size, 2)
       allocentricNeuronAngles.zipWithIndex.foreach({ case (angle, i) =>
         val rotatedNeuronDirection = rotateVector(referenceVector, angle)
-        egocentricNeuronDirectionsMat(i, 0) = rotatedNeuronDirection(0)
-        egocentricNeuronDirectionsMat(i, 1) = rotatedNeuronDirection(1)
+        egocentricNeuronDirections(i, 0) = rotatedNeuronDirection(0)
+        egocentricNeuronDirections(i, 1) = rotatedNeuronDirection(1)
       })
 
       // (neurons, others)
       val neuronTargetAngles: DenseMatrix[Double] = acos(
-        max(min(egocentricNeuronDirectionsMat * directionsToOthersMat, 1.0), -1.0)
+        max(min(egocentricNeuronDirections * directionsToGoals, 1.0), -1.0)
       )
 
       // val externalStimuliStrengths = DenseVector.fill(others.size) {
       //   config.externalStimulusStrength
       // }
-      // externalStimuliStrengths(distancesToOthersVec <:< config.antiGoalOverrideRange) =
+      // externalStimuliStrengths(distancesToOthers <:< config.antiGoalOverrideRange) =
       //   config.antiGoalStimulusStrength
 
       // (others)
@@ -167,7 +177,7 @@ object NeuralFieldAgent {
         max(tanh(nextMembranePotentials * config.inverseTemperatureCoefficient), 0.0)
 
       // (neurons, 2)
-      val neuralForces: DenseMatrix[Double] = egocentricNeuronDirectionsMat(::, *) *:* activations
+      val neuralForces: DenseMatrix[Double] = egocentricNeuronDirections(::, *) *:* activations
 
       if (agent.id == 0) println(activations)
 
