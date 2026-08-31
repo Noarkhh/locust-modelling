@@ -93,9 +93,9 @@ object LocustMain extends LazyLogging {
 
       GuiParticle(
         (agent.position(0) - container.xMin) / container.size,
-        (agent.position(1) - container.yMin) / container.size,
-        id,
-        internalState
+        (agent.position(1) - container.yMin) / container.size
+        // id,
+        // internalState
       )
     })
 
