@@ -8,6 +8,7 @@ import breeze.linalg.DenseVector
 trait ParticleAgent {
   val position: DenseVector[Double]
   val direction: DenseVector[Double]
+  val id: Long
 }
 
 trait AgentBehaviour[A <: ParticleAgent] {

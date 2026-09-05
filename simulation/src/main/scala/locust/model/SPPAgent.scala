@@ -22,16 +22,21 @@ final case class SPPAgent(
 object SPPAgent {
   def apply(position: DenseVector[Double], direction: DenseVector[Double], id: Long)(implicit
       config: ParticleAgentConfig
-  ): SPPAgent =
+  ): SPPAgent = {
+    // Stagger the initial march/pause timer uniformly over the full cycle
+    // (Bach 2018) so the population does not march and pause in lockstep.
+    val initialActiveTimeLeft = config.activityPeriod -
+      config.random.nextDouble() * (config.activityPeriod + config.minimalInactivityPeriod)
     SPPAgent(
       position,
       direction,
-      config.activityPeriod,
-      true,
+      initialActiveTimeLeft,
+      initialActiveTimeLeft > 0.0,
       direction,
       0,
       id
     )
+  }
 
   implicit case object Behaviour extends AgentBehaviour[SPPAgent] {
     override def update(agent: SPPAgent, others: Iterable[SPPAgent])(implicit
@@ -102,7 +107,9 @@ object SPPAgent {
     }
 
     override def getSpeed(agent: SPPAgent)(implicit config: ParticleAgentConfig): Double =
-      config.averageSpeed
+      if (!agent.isActive) 0.0
+      else if (agent.hopIterationsLeft > 0) config.averageSpeed + config.hopSpeed
+      else config.averageSpeed
 
     private def calculateSocialForce(
         agent: SPPAgent,

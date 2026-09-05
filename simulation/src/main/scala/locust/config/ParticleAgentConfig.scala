@@ -37,6 +37,11 @@ final case class ParticleAgentConfig(
     guiParticleSize: Int,
     guiStartIteration: Long,
     guiUpdateFrequency: Long,
+    // Parameter search instrumentation
+    snapshotPath: String,
+    snapshotFrequency: Long,
+    snapshotStartIteration: Long,
+    randomSeed: Long,
     // Particle agnet factory
     particleAgentFactory: ParticleAgentFactory,
     // Particle agent metrics config
@@ -45,6 +50,7 @@ final case class ParticleAgentConfig(
     timestepDuration: Double,
     agentContainerSize: Double,
     agentAmount: Int,
+    initialHeadingSpread: Double,
     initialAreaCenterX: Double,
     initialAreaCenterY: Double,
     initialAreaRadiusX: Double,
@@ -81,12 +87,13 @@ final case class ParticleAgentConfig(
     antiGoalStimulusStrength: Double,
     receptiveFieldStd: Double,
     antiGoalAngleRangeStart: Double,
-    pursuerHeadingAngleEnd: Double
+    pursuerHeadingAngleEnd: Double,
+    initialBumpAmplitude: Double
 ) extends XinukConfig {
   val worldWidth: Int = (worldWidthMeters / agentContainerSize).toInt
   val worldHeight: Int = (worldHeightMeters / agentContainerSize).toInt
   val guiCellSize: Int = (guiHeight / worldHeight).toInt
-  val random: Random = new SecureRandom
+  val random: Random = if (randomSeed != 0) new Random(randomSeed) else new SecureRandom
   val hopDurationTimesteps: Int = (hopDuration / timestepDuration).toInt
   val resumeMarchProbabilityPerTimestep: Double =
     1.0 - pow((1.0 - resumeMarchProbabilityPerSecond), timestepDuration)

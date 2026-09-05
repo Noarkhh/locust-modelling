@@ -14,7 +14,9 @@ final case class NeuralFieldAgent(
     id: Long,
     speed: Double,
     membranePotentials: DenseVector[Double],
-    hopIterationsLeft: Int
+    hopIterationsLeft: Int,
+    activeTimeLeft: Double,
+    isActive: Boolean
 ) extends ParticleAgent
 
 object NeuralFieldAgent {
@@ -46,18 +48,36 @@ object NeuralFieldAgent {
       direction: DenseVector[Double],
       id: Long
   )(implicit config: ParticleAgentConfig): NeuralFieldAgent = {
-    // val membranePotentials =
-    //   DenseVector.tabulate(config.neuronsAmount)(i => 0.1 * config.random.nextGaussian())
+    // Ring state encoding the agent's initial heading: a Gaussian bump of
+    // configurable amplitude at the heading angle (width = receptive field
+    // sigma), plus small noise. Amplitude 0 recovers the paper's rest-state
+    // init (bump forms freely at the social consensus — near-instant
+    // ordering); a formed bump must instead be ROTATED by social input, so
+    // ordering proceeds on the bump-rotation timescale.
+    val headingAngle = atan2(direction(1), direction(0))
     val membranePotentials = new DenseVector(
       allocentricNeuronAngles.map(neuronAngle => {
-        val headingAngle = atan2(direction(1), direction(0))
-        val angleBias = abs(Pi - abs(headingAngle - neuronAngle)) / Pi
-        config.random.nextGaussian() * 0.05 + angleBias * 0.95
-        // config.random.nextGaussian() * 0.5 + angleBias * 0.5
-        // config.random.nextGaussian() * 0.75 + angleBias * 0.25
+        val angleDifference = abs(headingAngle - neuronAngle)
+        val circularDistance = min(angleDifference, 2 * Pi - angleDifference)
+        config.initialBumpAmplitude *
+          exp(-circularDistance * circularDistance / (2 * config.receptiveFieldVariance)) +
+          0.1 * config.random.nextGaussian()
       })
     )
-    NeuralFieldAgent(position, direction, id, config.averageSpeed, membranePotentials, 0)
+    // Stagger the initial march/pause timer uniformly over the full cycle
+    // (Bach 2018) so the population does not march and pause in lockstep.
+    val initialActiveTimeLeft = config.activityPeriod -
+      config.random.nextDouble() * (config.activityPeriod + config.minimalInactivityPeriod)
+    NeuralFieldAgent(
+      position,
+      direction,
+      id,
+      config.averageSpeed,
+      membranePotentials,
+      0,
+      initialActiveTimeLeft,
+      initialActiveTimeLeft > 0.0
+    )
   }
 
   implicit case object Behaviour extends AgentBehaviour[NeuralFieldAgent] {
@@ -98,8 +118,11 @@ object NeuralFieldAgent {
 
           egocentricAnglesToOthers(i) = egocentricAngleToOther
 
+          // True pursuit test: the other's heading points AT this agent
+          // (angle between the other's direction and the bearing other->agent),
+          // not merely parallel to this agent's own heading.
           val otherAngleToAgent =
-            acos(max(min(agent.direction dot other.direction, 1.0), -1.0))
+            acos(max(min(other.direction dot (-directionToOther), 1.0), -1.0))
 
           if (
             (egocentricAngleToOther > config.antiGoalAngleRangeStart) &&
@@ -179,8 +202,6 @@ object NeuralFieldAgent {
       // (neurons, 2)
       val neuralForces: DenseMatrix[Double] = egocentricNeuronDirections(::, *) *:* activations
 
-      if (agent.id == 0) println(activations)
-
       // (2)
       val neuralForce: DenseVector[Double] = sum(neuralForces(::, *)).t
 
@@ -201,21 +222,33 @@ object NeuralFieldAgent {
           } else 0
         }
 
+      val isActive = agent.activeTimeLeft > 0.0
+      val inactiveTime = max(-agent.activeTimeLeft, 0.0)
+      val reactivate =
+        if (inactiveTime >= config.minimalInactivityPeriod)
+          config.random.nextDouble() < config.resumeMarchProbabilityPerTimestep
+        else false
+
+      val activeTimeLeft =
+        if (reactivate) config.activityPeriod else agent.activeTimeLeft - config.timestepDuration
+
       if (forceNorm.isNaN || forceNorm < 1e-9)
         agent.copy(
           membranePotentials = nextMembranePotentials,
-          hopIterationsLeft = hopIterationsLeft
+          hopIterationsLeft = hopIterationsLeft,
+          isActive = isActive,
+          activeTimeLeft = activeTimeLeft
         )
       else {
         val velocity: DenseVector[Double] =
           (config.averageSpeed / config.neuronsAmount) * neuralForce
-        if (agent.id == 0) println(velocity.norm())
-        if (agent.id == 0) println(velocity)
         agent.copy(
           direction = velocity.normalize(),
           speed = velocity.norm(),
           membranePotentials = nextMembranePotentials,
-          hopIterationsLeft = hopIterationsLeft
+          hopIterationsLeft = hopIterationsLeft,
+          isActive = isActive,
+          activeTimeLeft = activeTimeLeft
         )
       }
 
@@ -224,6 +257,7 @@ object NeuralFieldAgent {
     override def move(agent: NeuralFieldAgent, deltaTime: Double)(implicit
         config: ParticleAgentConfig
     ): NeuralFieldAgent = {
+      if (!agent.isActive) return agent
       val speed =
         if (agent.hopIterationsLeft <= 0) agent.speed
         else {

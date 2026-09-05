@@ -23,15 +23,24 @@ object ParticleAgentWorldCreator extends WorldCreator[ParticleAgentConfig] {
 
     val agents = List
       .tabulate(config.agentAmount)(i => {
-        val r = config.initialAreaRadiusX * sqrt(config.random.nextDouble())
-        val theta = config.random.nextDouble() * 2 * Pi
+        // ellipse
+        // val r = config.initialAreaRadiusX * sqrt(config.random.nextDouble())
+        // val theta = config.random.nextDouble() * 2 * Pi
+        // val agentX = config.initialAreaCenterX + r * cos(theta)
+        // val agentY = config.initialAreaCenterY + r * sin(theta) * verticalScaleFactor
 
-        val agentX = config.initialAreaCenterX + r * cos(theta)
-        val agentY = config.initialAreaCenterY + r * sin(theta) * verticalScaleFactor
+        // rectangle
+        val agentX = config.initialAreaCenterX +
+          (config.random.nextDouble() * 2 - 1) * config.initialAreaRadiusX
+        val agentY = config.initialAreaCenterY +
+          (config.random.nextDouble() * 2 - 1) * config.initialAreaRadiusY
+
         val agentPosition = DenseVector(agentX, agentY)
-
+        // Heading = uniform noise in (-pi, pi] scaled by initialHeadingSpread:
+        // 1.0 = no net alignment (paper replications), < 1.0 = deliberate
+        // initial direction toward +x (band scenarios).
         val noiseAngle = (config.random.nextDouble() * 2 * Pi) - Pi
-        val agentAngle = noiseAngle * 0.25
+        val agentAngle = noiseAngle * config.initialHeadingSpread
         val agentDirection = DenseVector(cos(agentAngle), sin(agentAngle))
         config.particleAgentFactory.instantiateAgent(agentPosition, agentDirection, i)
       })

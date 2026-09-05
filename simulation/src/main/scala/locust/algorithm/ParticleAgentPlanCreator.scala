@@ -17,6 +17,10 @@ import pl.edu.agh.locust.config.ParticleAgentConfig
 import quadtree.{QuadTree, Point}
 
 final case class ParticleAgentPlanCreator() extends PlanCreator[ParticleAgentConfig] {
+  override def finalize(worldShard: pl.edu.agh.xinuk.model.WorldShard)(implicit
+      config: ParticleAgentConfig
+  ): Unit = AgentSnapshotWriter.close()
+
   def createPlans(
       iteration: Long,
       cellId: CellId,
@@ -53,6 +57,10 @@ final case class ParticleAgentPlanCreator() extends PlanCreator[ParticleAgentCon
       })
 
     val localAgents = agentContainer.agents
+
+    if (AgentSnapshotWriter.shouldSnapshot(iteration)) {
+      AgentSnapshotWriter.append(iteration, localAgents, agentContainer.behaviour)
+    }
     // val agentsInRange = neighbourAgents ++ localAgents
 
     localAgents.foreach(agent =>
