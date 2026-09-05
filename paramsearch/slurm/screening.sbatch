@@ -25,7 +25,8 @@ set -euo pipefail
 module load java/21 python/3.11 2>/dev/null || true
 export LOCUST_SIM_JAR="${LOCUST_SIM_JAR:?set to the assembly jar path}"
 SCREEN_DIR="${SCREEN_DIR:?set to the screening output directory (shared FS)}"
-cd "$(dirname "$0")/.."
+PARAMSEARCH_DIR="${PARAMSEARCH_DIR:?set to the absolute path of the paramsearch directory}"
+export PYTHONPATH="$PARAMSEARCH_DIR${PYTHONPATH:+:$PYTHONPATH}"
 # -----------------------------------------------------------------------------
 
 STRIDE="${SLURM_ARRAY_TASK_COUNT:-1}"

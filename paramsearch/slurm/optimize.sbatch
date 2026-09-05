@@ -23,7 +23,8 @@ module load java/21 python/3.11 2>/dev/null || true
 export LOCUST_SIM_JAR="${LOCUST_SIM_JAR:?set to the assembly jar path}"
 BO_DIR="${BO_DIR:?set to the study output directory (shared FS)}"
 ONLY_PARAMS="${ONLY_PARAMS:-}"   # post-screening restriction, comma-separated
-cd "$(dirname "$0")/.."
+PARAMSEARCH_DIR="${PARAMSEARCH_DIR:?set to the absolute path of the paramsearch directory}"
+export PYTHONPATH="$PARAMSEARCH_DIR${PYTHONPATH:+:$PYTHONPATH}"
 # -----------------------------------------------------------------------------
 
 python -m paramsearch.optimize \
