@@ -55,10 +55,14 @@ TARGETS = [
     # encodes columnar shapes while APL frontal bands sit < 1, so it needs a
     # formation-specific value from the field papers before targeting.
     Target("profile_decay_r2", value=0.9, scale=0.05, kind="lower"),
-    # Kinematics: bands travel 3-4x slower than the individuals marching in
-    # them (Uvarov 1977, quoted in Ariel & Ayali's review: individual hopper
-    # speed relates to the band's marching rate "by a factor of 3-4"), i.e.
-    # a ratio of 0.25-0.33. VALIDATED against that source, not provisional.
+    # Kinematics: bands travel 3-4x slower than their marching individuals.
+    # MEASURED, not just quoted: Telenga 1930 (via Uvarov 1977, table 34) —
+    # Schistocerca instar I bands 25 vs 100 cm/min individual (ratio 0.25),
+    # instar V 333 vs 1000 cm/min (ratio 0.33). The metric's denominator
+    # (individual_marching_rate) mirrors Telenga's method: distance covered
+    # by a marching hopper per minute-scale window. Caveats: Schistocerca,
+    # instar-dependent, and Uvarov notes band speed also varies with band
+    # size, temperature, and terrain.
     Target("band_speed_ratio", value=0.3, scale=0.05),
     # marching_fraction is deliberately untargeted: its field value is the
     # least certain (Uvarov: "as low as 10%" at any moment), it is a

@@ -16,7 +16,6 @@ final case class SpinSystemAgent(
     position: DenseVector[Double],
     direction: DenseVector[Double],
     id: Long,
-    speed: Double,
     var neuronSpinStates: DenseVector[Double]
 ) extends ParticleAgent
 
@@ -54,7 +53,7 @@ object SpinSystemAgent {
       DenseVector.tabulate(config.neuronsAmount)(i =>
         if (config.random.nextBoolean()) 1.0 else -1.0
       )
-    SpinSystemAgent(position, direction, id, config.averageSpeed, neuronSpinStates)
+    SpinSystemAgent(position, direction, id, neuronSpinStates)
   }
 
   implicit case object Behaviour extends AgentBehaviour[SpinSystemAgent] {
@@ -98,20 +97,19 @@ object SpinSystemAgent {
 
       val neuralForce = egocentricNeuronDirections
         .zip(agent.neuronSpinStates.toArray)
-        .filter({ case (direction, spin) => spin > 0 })
-        .map({ case (direction, spin) => direction })
-        .reduce(_ + _)
+        .filter({ case (_, spin) => spin > 0 })
+        .map({ case (direction, _) => direction })
+        .foldLeft(DenseVector(0.0, 0.0))(_ + _)
 
-      val velocity = (config.averageSpeed / config.neuronsAmount) * neuralForce
-
-      agent.copy(direction = velocity.normalize(), speed = velocity.norm())
+      if (neuralForce.norm() < 1e-9) agent
+      else agent.copy(direction = neuralForce.normalize())
 
     }
 
     override def move(agent: SpinSystemAgent, deltaTime: Double)(implicit
         config: ParticleAgentConfig
     ): SpinSystemAgent = {
-      val newPosition = agent.position + agent.direction * agent.speed * deltaTime
+      val newPosition = agent.position + agent.direction * config.averageSpeed * deltaTime
 
       agent.copy(position = newPosition)
     }

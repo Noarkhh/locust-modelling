@@ -12,7 +12,6 @@ final case class NeuralFieldAgent(
     position: DenseVector[Double],
     direction: DenseVector[Double],
     id: Long,
-    speed: Double,
     membranePotentials: DenseVector[Double],
     hopIterationsLeft: Int,
     activeTimeLeft: Double,
@@ -72,7 +71,6 @@ object NeuralFieldAgent {
       position,
       direction,
       id,
-      config.averageSpeed,
       membranePotentials,
       0,
       initialActiveTimeLeft,
@@ -239,18 +237,14 @@ object NeuralFieldAgent {
           isActive = isActive,
           activeTimeLeft = activeTimeLeft
         )
-      else {
-        val velocity: DenseVector[Double] =
-          (config.averageSpeed / config.neuronsAmount) * neuralForce
+      else
         agent.copy(
-          direction = velocity.normalize(),
-          speed = velocity.norm(),
+          direction = neuralForce.normalize(),
           membranePotentials = nextMembranePotentials,
           hopIterationsLeft = hopIterationsLeft,
           isActive = isActive,
           activeTimeLeft = activeTimeLeft
         )
-      }
 
     }
 
@@ -259,10 +253,8 @@ object NeuralFieldAgent {
     ): NeuralFieldAgent = {
       if (!agent.isActive) return agent
       val speed =
-        if (agent.hopIterationsLeft <= 0) agent.speed
-        else {
-          config.hopSpeed
-        }
+        if (agent.hopIterationsLeft <= 0) config.averageSpeed
+        else config.hopSpeed
 
       val newPosition = agent.position + agent.direction * speed * deltaTime
 
@@ -277,7 +269,9 @@ object NeuralFieldAgent {
     }
 
     override def getSpeed(agent: NeuralFieldAgent)(implicit config: ParticleAgentConfig): Double =
-      agent.speed
+      if (!agent.isActive) 0.0
+      else if (agent.hopIterationsLeft > 0) config.hopSpeed
+      else config.averageSpeed
 
     private def rotateVector(vector: DenseVector[Double], angle: Double): DenseVector[Double] =
       DenseVector[Double](

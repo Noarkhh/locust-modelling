@@ -70,9 +70,11 @@ def compute_metrics(
     consecutive snapshots and are added on top of the averages:
 
     - ``band_speed`` / ``band_speed_ratio``: displacement rate of the band's
-      centre of mass, absolute and relative to the mean speed of moving
-      agents. Field bands travel far slower than the locusts in them, so the
-      ratio constrains the intermittency parameters.
+      centre of mass, absolute and relative to the Telenga-style individual
+      marching rate (per-agent displacement per snapshot interval, 75th
+      percentile across agents). Field bands travel 3-4x slower than their
+      marching individuals measured this way (Telenga 1930 via Uvarov 1977
+      table 34), so the ratio constrains the intermittency parameters.
     - ``area_per_agent_trend``: slope of the (normalized) occupied area per
       agent over time. A negative value at the end of the run means the swarm
       is still contracting — the progressive-clumping failure mode.
@@ -89,12 +91,18 @@ def compute_metrics(
     snapshot_metrics = []
     centers_of_mass = []
     along_band_per_snapshot = []
+    positions_by_id = []
     for iteration in kept_iterations:
         snapshot = records[records["iter"] == iteration]
         metrics, center_of_mass, along_band = _snapshot_metrics(snapshot, world_size)
         snapshot_metrics.append(metrics)
         centers_of_mass.append(center_of_mass)
         along_band_per_snapshot.append(along_band)
+        ordered = snapshot[np.argsort(snapshot["id"])]
+        positions_by_id.append(
+            (ordered["id"].astype(np.int64),
+             np.column_stack([ordered["x"], ordered["y"]]).astype(np.float64))
+        )
 
     aggregated = {
         key: _nanmean([metrics[key] for metrics in snapshot_metrics])
@@ -121,9 +129,27 @@ def compute_metrics(
         np.mean(np.linalg.norm(displacements, axis=1)) / snapshot_interval_seconds
     )
     aggregated["band_speed"] = band_speed
-    mean_moving_speed = aggregated.pop("_mean_moving_speed")
+    aggregated["mean_moving_speed"] = aggregated.pop("_mean_moving_speed")
+
+    # Individual marching rate, Telenga-style (Telenga 1930, via Uvarov 1977
+    # table 34): the distance a MARCHING hopper covers per minute-scale
+    # window — here each agent's minimum-image displacement per snapshot
+    # interval, taking the 75th percentile across agents (the median of the
+    # marching upper half, since ~40% are paused at any moment). This is the
+    # denominator against which the field band/individual ratio of 0.25-0.33
+    # was measured.
+    individual_rates = []
+    world_row = np.array(world_size)
+    for (ids_a, pos_a), (ids_b, pos_b) in zip(positions_by_id[:-1], positions_by_id[1:]):
+        if len(ids_a) != len(ids_b) or not np.array_equal(ids_a, ids_b):
+            continue
+        step = (pos_b - pos_a + world_row / 2) % world_row - world_row / 2
+        rates = np.linalg.norm(step, axis=1) / snapshot_interval_seconds
+        individual_rates.append(float(np.percentile(rates, 75)))
+    individual_rate = float(np.mean(individual_rates)) if individual_rates else 0.0
+    aggregated["individual_marching_rate"] = individual_rate
     aggregated["band_speed_ratio"] = (
-        band_speed / mean_moving_speed if mean_moving_speed > 0 else 0.0
+        band_speed / individual_rate if individual_rate > 0 else 0.0
     )
 
     area_per_agent = np.array(
