@@ -14,7 +14,7 @@
 #SBATCH --cpus-per-task=1
 #SBATCH --mem=4G
 #SBATCH --time=24:00:00
-#SBATCH --output=logs/bo-%a.out
+#SBATCH --output=/net/people/plgrid/plgjakubpryc/paramsearch/logs/%x-%A_%a.out
 
 set -euo pipefail
 
@@ -25,9 +25,6 @@ BO_DIR="${BO_DIR:?set to the study output directory (shared FS)}"
 ONLY_PARAMS="${ONLY_PARAMS:-}"   # post-screening restriction, comma-separated
 PARAMSEARCH_DIR="${PARAMSEARCH_DIR:?set to the absolute path of the paramsearch directory}"
 export PYTHONPATH="$PARAMSEARCH_DIR${PYTHONPATH:+:$PYTHONPATH}"
-# Per-simulation kill timeout: a hang guard, sized so one stuck run cannot
-# eat the task's wall time. Search-scale runs finish in well under an hour.
-export LOCUST_RUN_TIMEOUT="${LOCUST_RUN_TIMEOUT:-5400}"
 # -----------------------------------------------------------------------------
 
 python -m paramsearch.optimize \
