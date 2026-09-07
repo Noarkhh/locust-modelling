@@ -19,6 +19,9 @@ set -euo pipefail
 export LOCUST_SIM_JAR="${LOCUST_SIM_JAR:?set to the versioned jar path}"
 PARAMSEARCH_DIR="${PARAMSEARCH_DIR:?set to the absolute path of the paramsearch directory}"
 export SPREAD_DIR="${SPREAD_DIR:-$PARAMSEARCH_DIR/runs/replicate-spread}"
+# Per-simulation kill timeout: a hang guard, sized so one stuck run cannot
+# eat the task's wall time. Search-scale runs finish in well under an hour.
+export LOCUST_RUN_TIMEOUT="${LOCUST_RUN_TIMEOUT:-5400}"
 # -----------------------------------------------------------------------------
 
 export SPREAD_WORKERS=6

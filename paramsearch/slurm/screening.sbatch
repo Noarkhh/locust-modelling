@@ -27,6 +27,9 @@ export LOCUST_SIM_JAR="${LOCUST_SIM_JAR:?set to the assembly jar path}"
 SCREEN_DIR="${SCREEN_DIR:?set to the screening output directory (shared FS)}"
 PARAMSEARCH_DIR="${PARAMSEARCH_DIR:?set to the absolute path of the paramsearch directory}"
 export PYTHONPATH="$PARAMSEARCH_DIR${PYTHONPATH:+:$PYTHONPATH}"
+# Per-simulation kill timeout: a hang guard, sized so one stuck run cannot
+# eat the task's wall time. Search-scale runs finish in well under an hour.
+export LOCUST_RUN_TIMEOUT="${LOCUST_RUN_TIMEOUT:-5400}"
 # -----------------------------------------------------------------------------
 
 STRIDE="${SLURM_ARRAY_TASK_COUNT:-1}"

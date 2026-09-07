@@ -20,6 +20,9 @@ set -euo pipefail
 export LOCUST_SIM_JAR="${LOCUST_SIM_JAR:?set to the versioned jar path}"
 PARAMSEARCH_DIR="${PARAMSEARCH_DIR:?set to the absolute path of the paramsearch directory}"
 export FIDELITY_DIR="${FIDELITY_DIR:-$PARAMSEARCH_DIR/runs/scale-fidelity}"
+# Per-simulation kill timeout. The 50k-agent SPP replicates exceed runner.py's
+# 4 h default on one Ares node; 5.5 h x 2 replicates still fits the 12 h wall.
+export LOCUST_RUN_TIMEOUT="${LOCUST_RUN_TIMEOUT:-20000}"
 # -----------------------------------------------------------------------------
 
 python3 "$PARAMSEARCH_DIR/scripts/scale_fidelity.py" run \
