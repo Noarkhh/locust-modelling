@@ -30,5 +30,6 @@ export PYTHONPATH="$PARAMSEARCH_DIR${PYTHONPATH:+:$PYTHONPATH}"
 python -m paramsearch.optimize \
     --out "$BO_DIR" \
     --study-name "${STUDY_NAME:-locust-calibration}" \
+    --model "${MODEL:-NeuralFieldAgentFactory}" \
     --trials "${TRIALS_PER_WORKER:-25}" \
     ${ONLY_PARAMS:+--only "$ONLY_PARAMS"}

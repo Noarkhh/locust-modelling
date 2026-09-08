@@ -10,6 +10,7 @@ import json
 import math
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
+from typing import Callable
 
 from . import metrics as metrics_module
 from .objective import evaluate as score_metrics
@@ -222,12 +223,27 @@ def spp_band_scenario(agent_amount: int = 10000, replicates: int = 3) -> Scenari
     )
 
 
+def campaign_scenario(model: str, replicates: int = 3) -> Scenario:
+    """The validated campaign preset for a model — the single source both
+    the screening and BO entry points draw their scenario from, so a model
+    name always maps to the geometry its regime was characterized in."""
+    presets = {
+        NEURAL_FIELD: neural_field_band_scenario,
+        SPIN: spin_band_scenario,
+        SPP: spp_band_scenario,
+    }
+    if model not in presets:
+        raise ValueError(f"no campaign scenario for model {model!r}")
+    return presets[model](replicates=replicates)
+
+
 def evaluate_point(
     values: dict[str, float],
     evaluation_dir: str | Path,
     scenario: Scenario,
     base_seed: int = 1,
     keep_snapshots: bool = False,
+    interim_callback: Callable[[int, float], bool] | None = None,
 ) -> dict:
     """Run all replicates of one parameter set and score it.
 
@@ -236,6 +252,13 @@ def evaluate_point(
     evaluation; if every replicate fails the score falls back to the
     objective's failure score. Returns (and writes to result.json) a dict
     with the score, per-target breakdown, and per-replicate metrics.
+
+    ``interim_callback`` (used by the BO stage for pruning) is called after
+    every replicate except the last with the number of replicates completed
+    so far and the score those replicates alone would produce; returning
+    True stops the evaluation early, recorded as ``pruned_after_replicates``
+    in the result. The screening stage must leave this None: Sobol indices
+    need every design row fully evaluated.
     """
     evaluation_dir = Path(evaluation_dir)
     evaluation_dir.mkdir(parents=True, exist_ok=True)
@@ -244,6 +267,7 @@ def evaluate_point(
 
     replicate_metrics = []
     failures = []
+    pruned_after_replicates = None
     for replicate in range(scenario.replicates):
         run_dir = evaluation_dir / f"replicate-{replicate}"
         seed = base_seed + replicate
@@ -267,6 +291,11 @@ def evaluate_point(
         finally:
             if not keep_snapshots:
                 cleanup_snapshots(run_dir)
+        if interim_callback is not None and replicate < scenario.replicates - 1:
+            interim_score, _ = score_metrics(replicate_metrics)
+            if interim_callback(replicate + 1, interim_score):
+                pruned_after_replicates = replicate + 1
+                break
 
     # With no successful replicates every target scores its failure penalty.
     score, breakdown = score_metrics(replicate_metrics)
@@ -278,6 +307,7 @@ def evaluate_point(
         "breakdown": breakdown,
         "replicate_metrics": replicate_metrics,
         "failures": failures,
+        "pruned_after_replicates": pruned_after_replicates,
     }
     (evaluation_dir / "result.json").write_text(
         json.dumps(result, indent=2, default=str)
