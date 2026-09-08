@@ -11,12 +11,16 @@ import breeze.numerics.exp
 import breeze.numerics.pow
 import breeze.numerics.abs
 import breeze.linalg.DenseMatrix
+import pl.edu.agh.locust.utils.ParticleAgentUtils
 
 final case class SpinSystemAgent(
     position: DenseVector[Double],
     direction: DenseVector[Double],
     id: Long,
-    var neuronSpinStates: DenseVector[Double]
+    var neuronSpinStates: DenseVector[Double],
+    hopIterationsLeft: Int,
+    activeTimeLeft: Double,
+    isActive: Boolean
 ) extends ParticleAgent
 
 object SpinSystemAgent {
@@ -50,10 +54,37 @@ object SpinSystemAgent {
       id: Long
   )(implicit config: ParticleAgentConfig): SpinSystemAgent = {
     val neuronSpinStates =
-      DenseVector.tabulate(config.neuronsAmount)(i =>
-        if (config.random.nextBoolean()) 1.0 else -1.0
-      )
-    SpinSystemAgent(position, direction, id, neuronSpinStates)
+      if (config.initialBumpAmplitude > 0.0) {
+        val headingAngle = atan2(direction(1), direction(0))
+        new DenseVector[Double](
+          allocentricNeuronAngles
+            .map(neuronAngle => {
+              val angleDifference = abs(headingAngle - neuronAngle)
+              val circularDistance = min(angleDifference, 2 * Pi - angleDifference)
+
+              if (
+                cos(Pi * pow(circularDistance / Pi, config.synapticConnectivityCoefficient)) >= 0.0
+              )
+                1.0
+              else -1.0
+            })
+            .toArray
+        )
+      } else
+        DenseVector.tabulate(config.neuronsAmount)(_ =>
+          if (config.random.nextBoolean()) 1.0 else -1.0
+        )
+    val initialActiveTimeLeft = config.activityPeriod -
+      config.random.nextDouble() * (config.activityPeriod + config.minimalInactivityPeriod)
+    SpinSystemAgent(
+      position,
+      direction,
+      id,
+      neuronSpinStates,
+      0,
+      initialActiveTimeLeft,
+      initialActiveTimeLeft > 0.0
+    )
   }
 
   implicit case object Behaviour extends AgentBehaviour[SpinSystemAgent] {
@@ -61,55 +92,66 @@ object SpinSystemAgent {
     override def update(agent: SpinSystemAgent, others: Iterable[SpinSystemAgent])(implicit
         config: ParticleAgentConfig
     ): SpinSystemAgent = {
-      val targets: Iterable[(DenseVector[Double], Double)] = others.map(other => {
-        val vectorToOther = other.position - agent.position
-        val distanceToOther = vectorToOther.norm()
-        val directionToOther = vectorToOther.normalize()
+      val externalStimulusMultiplier = 1 / sqrt(2 * Pi * config.receptiveFieldVariance)
 
-        (directionToOther, distanceToOther)
-      })
+      val (neuronsExternalStimuli, egocentricNeuronDirections, isRepulsionZoneOccupied) =
+        ParticleAgentUtils.getNeuronsExternalStimuli(agent, others, externalStimulusMultiplier)
 
-      val referenceVector =
-        if (config.allocentricReferenceFrame) DenseVector[Double](1.0, 0.0) else agent.direction
+      runNeuralDynamics(agent.neuronSpinStates, neuronsExternalStimuli)
 
-      val egocentricNeuronDirections = allocentricNeuronAngles.map(rotateVector(referenceVector, _))
+      val activeSpins = max(agent.neuronSpinStates, 0.0)
+      val neuralForce = ParticleAgentUtils.getNeuralForce(activeSpins, egocentricNeuronDirections)
 
-      val neuronsExternalStimuli =
-        egocentricNeuronDirections
-          .map(egocentricNeuronDirection => {
-            targets
-              .map({ case (directionToOther, distanceToOther) =>
-                val neuronTargetAngle = acos(egocentricNeuronDirection.dot(directionToOther))
+      val forceNorm = neuralForce.norm()
 
-                (
-                  config.externalStimulusStrength /
-                    sqrt(2 * Pi * config.receptiveFieldVariance)
-                ) * exp(
-                  -pow(-neuronTargetAngle, 2) /
-                    (2 * config.receptiveFieldVariance)
-                )
-              })
-              .sum
-          })
-          .toArray
+      val hopIterationsLeft =
+        if (agent.hopIterationsLeft > 0) {
+          agent.hopIterationsLeft - 1
+        } else {
+          val willHop =
+            if (isRepulsionZoneOccupied)
+              Xorshift32.nextFloat(rngState) < config.crowdedHopProbability
+            else Xorshift32.nextFloat(rngState) < config.hopProbability
 
-      runNeuralDynamics(agent.neuronSpinStates, neuronsExternalStimuli, agent.id)
+          if (willHop) {
+            config.hopDurationTimesteps
+          } else 0
+        }
 
-      val neuralForce = egocentricNeuronDirections
-        .zip(agent.neuronSpinStates.toArray)
-        .filter({ case (_, spin) => spin > 0 })
-        .map({ case (direction, _) => direction })
-        .foldLeft(DenseVector(0.0, 0.0))(_ + _)
+      val isActive = agent.activeTimeLeft > 0.0
+      val inactiveTime = max(-agent.activeTimeLeft, 0.0)
+      val reactivate =
+        if (inactiveTime >= config.minimalInactivityPeriod)
+          config.random.nextDouble() < config.resumeMarchProbabilityPerTimestep
+        else false
 
-      if (neuralForce.norm() < 1e-9) agent
-      else agent.copy(direction = neuralForce.normalize())
+      val activeTimeLeft =
+        if (reactivate) config.activityPeriod else agent.activeTimeLeft - config.timestepDuration
 
+      if (forceNorm.isNaN || forceNorm < 1e-9)
+        agent.copy(
+          hopIterationsLeft = hopIterationsLeft,
+          isActive = isActive,
+          activeTimeLeft = activeTimeLeft
+        )
+      else
+        agent.copy(
+          direction = neuralForce.normalize(),
+          hopIterationsLeft = hopIterationsLeft,
+          isActive = isActive,
+          activeTimeLeft = activeTimeLeft
+        )
     }
 
     override def move(agent: SpinSystemAgent, deltaTime: Double)(implicit
         config: ParticleAgentConfig
     ): SpinSystemAgent = {
-      val newPosition = agent.position + agent.direction * config.averageSpeed * deltaTime
+      if (!agent.isActive) return agent
+      val speed =
+        if (agent.hopIterationsLeft <= 0) config.averageSpeed
+        else config.hopSpeed
+
+      val newPosition = agent.position + agent.direction * speed * deltaTime
 
       agent.copy(position = newPosition)
     }
@@ -122,18 +164,13 @@ object SpinSystemAgent {
     }
 
     override def getSpeed(agent: SpinSystemAgent)(implicit config: ParticleAgentConfig): Double =
-      config.averageSpeed
-
-    private def rotateVector(vector: DenseVector[Double], angle: Double): DenseVector[Double] =
-      DenseVector[Double](
-        cos(angle) * vector(0) - sin(angle) * vector(1),
-        sin(angle) * vector(0) + cos(angle) * vector(1)
-      )
+      if (!agent.isActive) 0.0
+      else if (agent.hopIterationsLeft > 0) config.hopSpeed
+      else config.averageSpeed
 
     private def runNeuralDynamics(
         neuronSpinStates: DenseVector[Double],
-        externalStimuli: Seq[Double],
-        agentId: Long
+        externalStimuli: DenseVector[Double]
     )(implicit config: ParticleAgentConfig) = {
       for (iteration <- 0 until config.neuralDynamicIterationsPerTimestep) {
         val neuronToFlip = Xorshift32.nextInt(rngState, config.neuronsAmount)
@@ -149,7 +186,7 @@ object SpinSystemAgent {
     private def calculateDeltaHamiltonian(
         selectedNeuron: Int,
         neuronSpinStates: DenseVector[Double],
-        externalStimuli: Seq[Double]
+        externalStimuli: DenseVector[Double]
     )(implicit config: ParticleAgentConfig): Double = {
       (2 * neuronSpinStates(selectedNeuron)) *
         (

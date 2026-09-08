@@ -13,7 +13,7 @@ from pathlib import Path
 
 from . import metrics as metrics_module
 from .objective import evaluate as score_metrics
-from .parameters import NEURAL_FIELD, SPP
+from .parameters import NEURAL_FIELD, SPIN, SPP
 from .runner import SimulationError, cleanup_snapshots, run_simulation
 
 
@@ -172,6 +172,27 @@ def neural_field_band_scenario(agent_amount: int = 2000, replicates: int = 3) ->
     """
     return Scenario(
         model=NEURAL_FIELD,
+        agent_amount=agent_amount,
+        full_height_patch=True,
+        iterations_number=8000,
+        timestep_duration=0.3,
+        snapshot_frequency=100,
+        burn_in_iterations=1500,
+        replicates=replicates,
+    )
+
+
+def spin_band_scenario(agent_amount: int = 2000, replicates: int = 3) -> Scenario:
+    """Campaign scenario for the spin-system model: same quasi-1D infinite
+    front as the neural-field preset (the two ring models are compared in
+    identical geometry). Validated 2026-09-08: with the ported escape
+    mechanism and marching intermittency, order stabilizes ~0.55-0.6 over
+    20+ sim-minutes at the NF-tuned strength 0.72; the spin model's own
+    optimum is the campaign's job to find. Note the Glauber loop makes spin
+    evaluations several times more expensive than neural-field ones.
+    """
+    return Scenario(
+        model=SPIN,
         agent_amount=agent_amount,
         full_height_patch=True,
         iterations_number=8000,

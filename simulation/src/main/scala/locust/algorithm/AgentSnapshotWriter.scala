@@ -8,7 +8,7 @@ import java.nio.file.{Files, Paths}
 import breeze.numerics.atan2
 
 import pl.edu.agh.locust.config.ParticleAgentConfig
-import pl.edu.agh.locust.model.{AgentBehaviour, NeuralFieldAgent, ParticleAgent, SPPAgent}
+import pl.edu.agh.locust.model.{AgentBehaviour, NeuralFieldAgent, ParticleAgent, SPPAgent, SpinSystemAgent}
 
 /** Appends fixed-width little-endian agent records to a binary file, one file
   * per JVM. All workers of a node share the writer; rows from different cells
@@ -43,6 +43,8 @@ object AgentSnapshotWriter {
           (if (nfa.isActive) 1 else 0) | (if (nfa.hopIterationsLeft > 0) 2 else 0)
         case spp: SPPAgent =>
           (if (spp.isActive) 1 else 0) | (if (spp.hopIterationsLeft > 0) 2 else 0)
+        case ssa: SpinSystemAgent =>
+          (if (ssa.isActive) 1 else 0) | (if (ssa.hopIterationsLeft > 0) 2 else 0)
         case _ => 1
       }
       buffer.putInt(iteration.toInt)

@@ -23,6 +23,7 @@ GROUP_MODELS = {
     "shared": {SPP, SPIN, NEURAL_FIELD},
     "spp": {SPP},
     "ring": {SPIN, NEURAL_FIELD},
+    "spin": {SPIN},
     "neural-field": {NEURAL_FIELD},
 }
 
@@ -66,14 +67,17 @@ PARAMETERS = [
     Parameter("inverseTemperatureCoefficient", "ring", (1.0, 1e4), 1000.0, log=True),
     Parameter("neuralInhibitionCoefficient", "ring", (0.0, 1.0), 0.0),
     Parameter("totalSocialAttraction", "ring", (0.01, 2.0), 0.24, log=True),
-    # --- neural field escape / anti-goal mechanism ---
-    Parameter("antiGoalOverrideRange", "neural-field", (0.035, 0.5), 0.3),
+    # --- escape / anti-goal mechanism (shared ring path: both the neural
+    # field and spin models perceive pursuers via RingAttractorUtils) ---
+    Parameter("antiGoalOverrideRange", "ring", (0.035, 0.5), 0.3),
     # Escape gain. Bounds from the 2026-09-05 strength sweep: marching peaks
     # near 0.72 and degrades by 2.0; a strength of 0 does NOT disable the
     # mechanism (flagged pursuers are silenced, not attractive).
-    Parameter("antiGoalStimulusStrength", "neural-field", (0.01, 2.0), 0.72, log=True),
-    Parameter("antiGoalAngleRangeStart", "neural-field", (0.785, 2.75), 1.507),
-    Parameter("pursuerHeadingAngleEnd", "neural-field", (0.393, 3.1415), 1.507),
+    Parameter("antiGoalStimulusStrength", "ring", (0.01, 2.0), 0.72, log=True),
+    Parameter("antiGoalAngleRangeStart", "ring", (0.785, 2.75), 1.507),
+    Parameter("pursuerHeadingAngleEnd", "ring", (0.393, 3.1415), 1.507),
+    # --- spin system ---
+    Parameter("neuralDynamicIterationsPerNeuronPerSecond", "spin", (10.0, 300.0), 50.0),
 ]
 
 
