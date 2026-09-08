@@ -21,6 +21,10 @@ module load java/21 python/3.11 # or export LOCUST_JAVA=/path/to/jdk-21/bin/java
 export LOCUST_SIM_JAR="${LOCUST_SIM_JAR:?set to the versioned jar path}"
 PARAMSEARCH_DIR="${PARAMSEARCH_DIR:?set to the absolute path of the paramsearch directory}"
 export FIDELITY_DIR="${FIDELITY_DIR:-$PARAMSEARCH_DIR/runs/scale-fidelity}"
+# This script parallelizes across evaluations itself; keep each
+# evaluation's replicates sequential so the CPU allocation is not
+# oversubscribed by nested JVM pools.
+export LOCUST_REPLICATE_WORKERS=1
 # The 50k-agent SPP replicates exceed runner.py's 4 h default timeout on one
 # Ares node — export LOCUST_RUN_TIMEOUT at submission for the full-scale cells.
 # -----------------------------------------------------------------------------

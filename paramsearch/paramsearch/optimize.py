@@ -21,6 +21,7 @@ import json
 from pathlib import Path
 
 import optuna
+from optuna.storages.journal import JournalFileBackend, JournalFileOpenLock
 
 from .evaluation import Scenario, campaign_scenario, evaluate_point
 from .parameters import NEURAL_FIELD, Parameter, active_parameters
@@ -110,9 +111,9 @@ def load_study(
         else optuna.pruners.NopPruner()
     )
     storage = optuna.storages.JournalStorage(
-        optuna.storages.journal.JournalFileBackend(
+        JournalFileBackend(
             str(storage_path),
-            lock_obj=optuna.storages.journal.JournalFileOpenLock(str(storage_path)),
+            lock_obj=JournalFileOpenLock(str(storage_path)),
         )
     )
     sampler = optuna.samplers.TPESampler(

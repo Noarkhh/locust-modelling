@@ -15,7 +15,7 @@
 #SBATCH --job-name=locust-screening
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=1
-#SBATCH --mem=4G
+#SBATCH --mem-per-cpu=4G
 #SBATCH --time=12:00:00
 #SBATCH --output=/net/people/plgrid/plgjakubpryc/paramsearch/logs/%x-%A_%a.out
 

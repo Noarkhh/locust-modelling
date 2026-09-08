@@ -104,15 +104,26 @@ def analyze(output_dir: Path) -> None:
             median = np.median(values[finite]) if finite.any() else 0.0
             values = np.where(finite, values, median)
             print(f"{output_name}: imputed {int((~finite).sum())} missing values")
-        indices = sobol_analyze.analyze(
-            problem, values, calc_second_order=False, print_to_console=False
-        )
+        # Constant or near-constant outputs (e.g. a metric that failed on
+        # almost every row and was imputed to one median value) send SALib
+        # down a degenerate code path; they carry no sensitivity information
+        # anyway, so skip them instead of aborting the whole analysis.
+        try:
+            indices = sobol_analyze.analyze(
+                problem, values, calc_second_order=False, print_to_console=False
+            )
+        except (ValueError, ZeroDivisionError, FloatingPointError) as error:
+            print(f"{output_name}: skipped (degenerate output: {error})")
+            continue
         ranking[output_name] = {
             name: {"S1": float(s1), "ST": float(st)}
             for name, s1, st in zip(problem["names"], indices["S1"], indices["ST"])
         }
 
     (output_dir / "sensitivity.json").write_text(json.dumps(ranking, indent=2))
+    if not ranking:
+        print("every output was degenerate; no sensitivity indices to rank")
+        return
 
     # Rank by the maximum total-order index across all outputs: a parameter
     # matters if it moves ANY metric, not just the aggregate score.
@@ -120,9 +131,10 @@ def analyze(output_dir: Path) -> None:
         name: max(ranking[output][name]["ST"] for output in ranking)
         for name in problem["names"]
     }
+    objective_ranking = ranking.get("objective_score", {})
     print(f"\n{'parameter':40s} {'max ST':>8s}   (ST on objective)")
     for name, total_order in sorted(max_total_order.items(), key=lambda item: -item[1]):
-        objective_st = ranking["objective_score"][name]["ST"]
+        objective_st = objective_ranking.get(name, {}).get("ST", float("nan"))
         print(f"{name:40s} {total_order:8.3f}   ({objective_st:.3f})")
     print(
         "\nSuggestion: keep parameters with max ST >~ 0.05 for the BO stage; "

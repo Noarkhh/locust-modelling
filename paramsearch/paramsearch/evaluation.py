@@ -8,6 +8,8 @@ their resolved config and logs, plus result.json) for post-hoc analysis.
 
 import json
 import math
+import os
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Callable
@@ -16,6 +18,18 @@ from . import metrics as metrics_module
 from .objective import evaluate as score_metrics
 from .parameters import NEURAL_FIELD, SPIN, SPP
 from .runner import SimulationError, cleanup_snapshots, run_simulation
+
+# How many replicates of one evaluation may run concurrently (each is its own
+# single-worker JVM; the runner's per-run port allocation keeps them apart).
+# Follows the SLURM CPU allocation by default, so `sbatch --cpus-per-task=3`
+# is the only knob a submission needs; override with LOCUST_REPLICATE_WORKERS.
+# Only used when no interim callback is set — the BO stage's pruning depends
+# on replicates completing one at a time.
+REPLICATE_WORKERS = int(
+    os.environ.get(
+        "LOCUST_REPLICATE_WORKERS", os.environ.get("SLURM_CPUS_PER_TASK", "1")
+    )
+)
 
 
 @dataclass(frozen=True)
@@ -259,23 +273,28 @@ def evaluate_point(
     True stops the evaluation early, recorded as ``pruned_after_replicates``
     in the result. The screening stage must leave this None: Sobol indices
     need every design row fully evaluated.
+
+    Without an interim callback the replicates run concurrently, up to
+    REPLICATE_WORKERS at a time; with one they run sequentially, since
+    pruning is decided between replicates.
     """
     evaluation_dir = Path(evaluation_dir)
     evaluation_dir.mkdir(parents=True, exist_ok=True)
     simulation_overrides = scenario.simulation_overrides(values)
-    world_width, world_height = scenario.world_size(values["averageSpeed"])
 
-    replicate_metrics = []
-    failures = []
-    pruned_after_replicates = None
-    for replicate in range(scenario.replicates):
+    def run_replicate(replicate: int) -> tuple[dict[str, float] | None, str | None]:
+        """One replicate: simulate, extract metrics, clean up. Returns the
+        metrics dict, or None with the error message on failure."""
         run_dir = evaluation_dir / f"replicate-{replicate}"
-        seed = base_seed + replicate
         try:
             run_simulation(
-                values, run_dir, seed=seed, sim_overrides=simulation_overrides
+                values,
+                run_dir,
+                seed=base_seed + replicate,
+                sim_overrides=simulation_overrides,
             )
-            replicate_metrics.append(
+            world_width, world_height = scenario.world_size(values["averageSpeed"])
+            return (
                 metrics_module.compute_metrics(
                     run_dir / "snapshots",
                     world_width=world_width,
@@ -284,18 +303,39 @@ def evaluate_point(
                     snapshot_frequency=scenario.snapshot_frequency,
                     # Snapshots already start after burn-in; keep them all.
                     burn_in_fraction=0.0,
-                )
+                ),
+                None,
             )
         except (SimulationError, FileNotFoundError, ValueError) as error:
-            failures.append({"replicate": replicate, "error": str(error)})
+            return None, str(error)
         finally:
             if not keep_snapshots:
                 cleanup_snapshots(run_dir)
-        if interim_callback is not None and replicate < scenario.replicates - 1:
-            interim_score, _ = score_metrics(replicate_metrics)
-            if interim_callback(replicate + 1, interim_score):
-                pruned_after_replicates = replicate + 1
-                break
+
+    replicate_metrics = []
+    failures = []
+    pruned_after_replicates = None
+    if interim_callback is None and REPLICATE_WORKERS > 1:
+        workers = min(REPLICATE_WORKERS, scenario.replicates)
+        with ThreadPoolExecutor(max_workers=workers) as executor:
+            outcomes = list(executor.map(run_replicate, range(scenario.replicates)))
+        for replicate, (metrics, error) in enumerate(outcomes):
+            if metrics is not None:
+                replicate_metrics.append(metrics)
+            else:
+                failures.append({"replicate": replicate, "error": error})
+    else:
+        for replicate in range(scenario.replicates):
+            metrics, error = run_replicate(replicate)
+            if metrics is not None:
+                replicate_metrics.append(metrics)
+            else:
+                failures.append({"replicate": replicate, "error": error})
+            if interim_callback is not None and replicate < scenario.replicates - 1:
+                interim_score, _ = score_metrics(replicate_metrics)
+                if interim_callback(replicate + 1, interim_score):
+                    pruned_after_replicates = replicate + 1
+                    break
 
     # With no successful replicates every target scores its failure penalty.
     score, breakdown = score_metrics(replicate_metrics)

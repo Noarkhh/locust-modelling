@@ -22,4 +22,8 @@ export SPREAD_DIR="${SPREAD_DIR:-$PARAMSEARCH_DIR/runs/replicate-spread}"
 # -----------------------------------------------------------------------------
 
 export SPREAD_WORKERS=6
+# This script parallelizes across evaluations itself; keep each
+# evaluation's replicates sequential so the CPU allocation is not
+# oversubscribed by nested JVM pools.
+export LOCUST_REPLICATE_WORKERS=1
 python3 "$PARAMSEARCH_DIR/scripts/replicate_spread.py"

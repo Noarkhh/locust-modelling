@@ -96,7 +96,10 @@ def run_simulation(
     )
 
     started = time.time()
-    timestep_duration = float(overrides.get("timestepDuration", 0.0))
+    timestep_override = overrides.get("timestepDuration", 0.0)
+    timestep_duration = (
+        float(timestep_override) if isinstance(timestep_override, (int, float)) else 0.0
+    )
     with open(run_dir / "sim.log", "w") as log:
         process = subprocess.Popen(cmd, stdout=log, stderr=subprocess.STDOUT)
         returncode = _supervise(process, run_dir, snap_dir, timestep_duration)

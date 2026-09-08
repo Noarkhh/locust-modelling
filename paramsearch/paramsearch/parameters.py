@@ -77,7 +77,7 @@ PARAMETERS = [
     Parameter("antiGoalAngleRangeStart", "ring", (0.785, 2.75), 1.507),
     Parameter("pursuerHeadingAngleEnd", "ring", (0.393, 3.1415), 1.507),
     # --- spin system ---
-    Parameter("neuralDynamicIterationsPerNeuronPerSecond", "spin", (10.0, 300.0), 50.0),
+    Parameter("neuralDynamicIterationsPerNeuronPerSecond", "spin", (10.0, 100.0), 50.0),
 ]
 
 

@@ -174,7 +174,7 @@ def _nanmean(values: list[float]) -> float:
 
 def _snapshot_metrics(
     snapshot: np.ndarray, world_size: WorldSize
-) -> tuple[dict[str, float], np.ndarray]:
+) -> tuple[dict[str, float], np.ndarray, np.ndarray]:
     """Compute all single-snapshot metrics plus the band's centre of mass.
 
     Establishes the band frame — minimum-image coordinates around the circular
