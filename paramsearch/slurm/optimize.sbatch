@@ -10,6 +10,8 @@
 # Each worker runs single-worker (single-core) simulations sequentially;
 # throughput comes from the array width, not per-simulation parallelism.
 #SBATCH --job-name=locust-bo
+#SBATCH -A plglocustsim01-cpu
+#SBATCH -p plgrid
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=1
 #SBATCH --mem=4G

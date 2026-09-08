@@ -5,6 +5,8 @@
 #   sbatch slurm/replicate_spread.sbatch
 #
 #SBATCH --job-name=locust-spread
+#SBATCH -A plglocustsim01-cpu
+#SBATCH -p plgrid
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=12
 #SBATCH --mem-per-cpu=4G

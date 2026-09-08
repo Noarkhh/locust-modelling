@@ -13,6 +13,8 @@
 # simulations (see Scenario in paramsearch/evaluation.py). Size the array
 # freely — e.g. one task per design row.
 #SBATCH --job-name=locust-screening
+#SBATCH -A plglocustsim01-cpu
+#SBATCH -p plgrid
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=1
 #SBATCH --mem-per-cpu=4G
