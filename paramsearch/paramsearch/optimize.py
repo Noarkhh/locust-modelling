@@ -90,6 +90,37 @@ def make_objective(parameters: list[Parameter], scenario: Scenario, output_dir: 
     return objective
 
 
+def warm_start_values(
+    campaign_dir: Path, parameters: list[Parameter], count: int
+) -> list[dict[str, float]]:
+    """Select the best screening rows as seed trials for the BO study.
+
+    Only fully healthy rows qualify (every replicate succeeded), and rows
+    whose mean band_speed_ratio exceeds 1 are excluded on physical grounds:
+    a coherent band cannot travel faster than its marching individuals, and
+    screening surfaced fast-drifting blobs that scored well by exploiting
+    the noise-widened ratio normalization. Values are restricted to the
+    searched parameters; anything frozen by --only stays at its default.
+    """
+    candidates = []
+    for result_file in campaign_dir.glob("evaluations/eval-*/result.json"):
+        result = json.loads(result_file.read_text())
+        if result["failures"] or not result["replicate_metrics"]:
+            continue
+        mean_ratio = sum(
+            metrics["band_speed_ratio"] for metrics in result["replicate_metrics"]
+        ) / len(result["replicate_metrics"])
+        if mean_ratio > 1.0:
+            continue
+        candidates.append((result["score"], result["values"]))
+    candidates.sort(key=lambda scored: scored[0])
+    searched = {parameter.name for parameter in parameters}
+    return [
+        {name: value for name, value in values.items() if name in searched}
+        for _, values in candidates[:count]
+    ]
+
+
 def load_study(
     storage_path: Path, study_name: str, prune_above: float = PRUNE_SCORE_DEFAULT
 ) -> optuna.Study:
@@ -160,6 +191,20 @@ def main() -> None:
         help="comma-separated parameter names to search "
         "(post-screening restriction); empty = all active",
     )
+    parser.add_argument(
+        "--warm-start",
+        type=Path,
+        default=None,
+        help="screening campaign directory whose best rows seed the study; "
+        "only applied while the study is still empty, so exactly the first "
+        "worker (or a pre-submission seeding run) enqueues them",
+    )
+    parser.add_argument(
+        "--warm-start-count",
+        type=int,
+        default=5,
+        help="how many screening rows to enqueue",
+    )
     arguments = parser.parse_args()
 
     parameters = active_parameters(arguments.model)
@@ -179,6 +224,13 @@ def main() -> None:
     study = load_study(
         arguments.out / "journal.log", arguments.study_name, arguments.prune_above
     )
+    if arguments.warm_start is not None and not study.get_trials(deepcopy=False):
+        seeds = warm_start_values(
+            arguments.warm_start, parameters, arguments.warm_start_count
+        )
+        for values in seeds:
+            study.enqueue_trial(values)
+        print(f"enqueued {len(seeds)} warm-start trials from {arguments.warm_start}")
     study.optimize(
         make_objective(parameters, scenario, arguments.out),
         n_trials=arguments.trials,

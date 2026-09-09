@@ -122,4 +122,12 @@ def _score_target(target: Target, replicate_values: np.ndarray) -> float:
         discrepancy = max(0.0, mean - target.value)
     else:  # "lower"
         discrepancy = max(0.0, target.value - mean)
-    return target.weight * (discrepancy / normalization) ** 2
+    # Cap at the failure penalty: the chi-square is unbounded above, and a
+    # single blown metric (screening saw band_speed_ratio ~15 -> a score of
+    # ~80000) would otherwise dominate any variance-based analysis and stretch
+    # the score axis meaninglessly. Beyond a 10-sigma miss, "how much worse"
+    # carries no calibration information.
+    return min(
+        target.weight * (discrepancy / normalization) ** 2,
+        target.weight * FAILURE_SCORE,
+    )

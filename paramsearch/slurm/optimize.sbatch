@@ -34,4 +34,6 @@ python -m paramsearch.optimize \
     --study-name "${STUDY_NAME:-locust-calibration}" \
     --model "${MODEL:-NeuralFieldAgentFactory}" \
     --trials "${TRIALS_PER_WORKER:-25}" \
-    ${ONLY_PARAMS:+--only "$ONLY_PARAMS"}
+    ${ONLY_PARAMS:+--only "$ONLY_PARAMS"} \
+    ${WARM_START:+--warm-start "$WARM_START"} \
+    ${REPLICATES:+--replicates "$REPLICATES"}
