@@ -16,7 +16,24 @@
 set -euo pipefail
 
 # --- site configuration ------------------------------------------------------
-# module load java/21 python/3.11   # or export LOCUST_JAVA=/path/to/jdk-21/bin/java
+module load java/21 2>/dev/null || true
+# The job must use the same interpreter the study was set up with: activate
+# the conda environment explicitly instead of inheriting PATH from the
+# submission shell (which module load python would half-shadow).
+# Locate the conda installation: explicit override, then the conda binary
+# inherited from the submission environment, then common install locations.
+CONDA_ROOT="${LOCUST_CONDA_ROOT:-$(conda info --base 2>/dev/null || true)}"
+if [ -z "$CONDA_ROOT" ]; then
+    for candidate in miniconda3 anaconda3 miniforge3 mambaforge; do
+        [ -d "$HOME/$candidate" ] && CONDA_ROOT="$HOME/$candidate" && break
+    done
+fi
+[ -f "$CONDA_ROOT/etc/profile.d/conda.sh" ] || {
+    echo "cannot locate conda (set LOCUST_CONDA_ROOT)" >&2; exit 1; }
+set +u  # conda's activation scripts reference unset variables
+source "$CONDA_ROOT/etc/profile.d/conda.sh"
+conda activate "${LOCUST_CONDA_ENV:-base}"
+set -u
 # source /path/to/locust-venv/bin/activate
 export LOCUST_SIM_JAR="${LOCUST_SIM_JAR:?set to the versioned jar path}"
 PARAMSEARCH_DIR="${PARAMSEARCH_DIR:?set to the absolute path of the paramsearch directory}"
