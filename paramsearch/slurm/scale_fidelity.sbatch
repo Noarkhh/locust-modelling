@@ -1,18 +1,20 @@
 #!/bin/bash
-# A5: scale-fidelity check. One array task per (model, parameter set, scale)
-# cell; task count = `python scripts/scale_fidelity.py count` (40 by default).
+# Scale-fidelity check. One array task per (model, parameter set, scale)
+# cell; task count = `python scripts/scale_fidelity.py count`.
 #
-#   sbatch --array=0-39 ... slurm/scale_fidelity.sbatch
+#   FIDELITY_CANDIDATES=... sbatch --array=0-47 slurm/scale_fidelity.sbatch
 # afterwards:
-#   python scripts/scale_fidelity.py analyze
+#   FIDELITY_CANDIDATES=... python scripts/scale_fidelity.py analyze
 #
+# Each task is one evaluation whose 5 replicates run concurrently on the
+# allocated CPUs (single-worker simulations; see evaluation.py).
 #SBATCH --job-name=locust-fidelity
 #SBATCH -A plglocustsim01-cpu
 #SBATCH -p plgrid
 #SBATCH --ntasks=1
-#SBATCH --cpus-per-task=8
-#SBATCH --mem-per-cpu=3G
-#SBATCH --time=30:00:00
+#SBATCH --cpus-per-task=5
+#SBATCH --mem-per-cpu=4G
+#SBATCH --time=48:00:00
 #SBATCH --output=/net/people/plgrid/plgjakubpryc/paramsearch/logs/%x-%A_%a.out
 
 set -euo pipefail
@@ -40,13 +42,12 @@ set -u
 export LOCUST_SIM_JAR="${LOCUST_SIM_JAR:?set to the versioned jar path}"
 PARAMSEARCH_DIR="${PARAMSEARCH_DIR:?set to the absolute path of the paramsearch directory}"
 export FIDELITY_DIR="${FIDELITY_DIR:-$PARAMSEARCH_DIR/runs/scale-fidelity}"
-# This script parallelizes across evaluations itself; keep each
-# evaluation's replicates sequential so the CPU allocation is not
-# oversubscribed by nested JVM pools.
-export LOCUST_REPLICATE_WORKERS=1
-# The 50k-agent SPP replicates exceed runner.py's 4 h default timeout on one
-# Ares node — export LOCUST_RUN_TIMEOUT at submission for the full-scale cells.
+export FIDELITY_CANDIDATES="${FIDELITY_CANDIDATES:-}"
+# Replicates run concurrently on the task's CPUs (LOCUST_REPLICATE_WORKERS
+# follows SLURM_CPUS_PER_TASK); each simulation stays single-worker.
+# Full-scale replicates exceed runner.py's 4 h default timeout on one Ares
+# core — export LOCUST_RUN_TIMEOUT at submission.
 # -----------------------------------------------------------------------------
 
 python3 "$PARAMSEARCH_DIR/scripts/scale_fidelity.py" run \
-  --index "${SLURM_ARRAY_TASK_ID:?}" --workers "${SLURM_CPUS_PER_TASK:-8}"
+  --index "${SLURM_ARRAY_TASK_ID:?}" --workers 1

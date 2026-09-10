@@ -22,24 +22,34 @@ import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from paramsearch.evaluation import (evaluate_point, neural_field_band_scenario,
-                                    spp_band_scenario)
-from paramsearch.parameters import (NEURAL_FIELD, SPP, active_parameters,
+                                    spin_band_scenario)
+from paramsearch.parameters import (NEURAL_FIELD, SPIN, active_parameters,
                                     decode_sample, salib_problem)
 
 OUTPUT_DIR = Path(os.environ.get("FIDELITY_DIR", "runs/scale-fidelity"))
+# Optional curated candidate file ({model: [values, ...]}); without it the
+# sets are drawn uniformly across the search box as in the original check.
+# Curated sets concentrate the measurement where ranking precision matters
+# (the good region the optimizer actually explores) while keeping mid and
+# poor sets for rank spread.
+CANDIDATES_FILE = os.environ.get("FIDELITY_CANDIDATES", "")
 SETS_PER_MODEL = 10
 SAMPLING_SEED = 7
 
 # (model, preset factory, search-scale agents, reference-scale agents,
-#  replicates at search / reference scale). Reference scales chosen to fit a
-# 12 h task: NF 10x, SPP 5x.
+#  replicates at search / reference scale). Equal replicate counts at both
+# scales: the original check's full-scale ranking was noise-limited at 2
+# replicates. Spin reference scale is 5x, not 10x — the Glauber loop makes
+# a 20k spin replicate exceed a schedulable wall window on one core.
 PLANS = [
-    (NEURAL_FIELD, neural_field_band_scenario, 2000, 20000, 3, 2),
-    (SPP, spp_band_scenario, 10000, 50000, 3, 2),
+    (NEURAL_FIELD, neural_field_band_scenario, 2000, 20000, 5, 5),
+    (SPIN, spin_band_scenario, 2000, 10000, 5, 5),
 ]
 
 
 def parameter_sets(model: str) -> list[dict]:
+    if CANDIDATES_FILE:
+        return json.loads(Path(CANDIDATES_FILE).read_text())[model]
     parameters = active_parameters(model)
     problem = salib_problem(parameters)
     bounds = np.array(problem["bounds"])
@@ -83,7 +93,7 @@ def analyze() -> None:
 
     for model, *_ in PLANS:
         search_scores, full_scores, missing = [], [], 0
-        for set_index in range(SETS_PER_MODEL):
+        for set_index in range(len(parameter_sets(model))):
             pair = []
             for scale_name in ("search", "full"):
                 path = OUTPUT_DIR / model / f"set-{set_index:02d}" / scale_name / "result.json"
