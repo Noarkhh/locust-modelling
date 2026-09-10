@@ -7,14 +7,16 @@
 # Total trials = array size x --trials. Resubmit with the same BO_DIR and
 # study name to continue the search after wallclock limits.
 #
-# Each worker runs single-worker (single-core) simulations sequentially;
-# throughput comes from the array width, not per-simulation parallelism.
+# Each array task runs 4-worker simulations (horizontal slabs) with a
+# hybrid replicate schedule: replicate 1 alone (the pruning decision), then
+# up to 4 survivors concurrently — peak 4 JVMs x 4 worker threads = 16
+# CPUs (see evaluation.evaluate_point and Scenario.workers_x).
 #SBATCH --job-name=locust-bo
 #SBATCH -A plglocustsim01-cpu
 #SBATCH -p plgrid
 #SBATCH --ntasks=1
-#SBATCH --cpus-per-task=1
-#SBATCH --mem=4G
+#SBATCH --cpus-per-task=16
+#SBATCH --mem=20G
 #SBATCH --time=24:00:00
 #SBATCH --output=/net/people/plgrid/plgjakubpryc/paramsearch/logs/%x-%A_%a.out
 
@@ -44,6 +46,9 @@ BO_DIR="${BO_DIR:?set to the study output directory (shared FS)}"
 ONLY_PARAMS="${ONLY_PARAMS:-}"   # post-screening restriction, comma-separated
 PARAMSEARCH_DIR="${PARAMSEARCH_DIR:?set to the absolute path of the paramsearch directory}"
 export PYTHONPATH="$PARAMSEARCH_DIR${PYTHONPATH:+:$PYTHONPATH}"
+# 16 allocated CPUs = 4 concurrent replicate JVMs x 4 xinuk workers each;
+# without this cap the replicate pool would try 16 concurrent JVMs.
+export LOCUST_REPLICATE_WORKERS=4
 # -----------------------------------------------------------------------------
 
 python -m paramsearch.optimize \

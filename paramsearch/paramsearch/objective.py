@@ -1,12 +1,12 @@
 """Combine simulation metrics into the scalar objective minimized by Optuna.
 
-The objective is a synthetic-likelihood chi-square: for each target, the
-squared discrepancy between the replicate-mean metric and its empirical
-target, normalized by a scale that blends the target's intrinsic tolerance
-with the between-replicate standard deviation. Guard targets (``upper`` /
-``lower``) are one-sided penalties: zero anywhere inside the allowed region,
-quadratic outside — they exclude pathological regimes (aggregation collapse,
-band evaporation) without distorting the optimum inside the valid region.
+The objective is a history-matching-style implausibility sum: for each
+target, the squared discrepancy between the replicate-mean metric and its
+empirical target, normalized by the target's fixed tolerance scale. Guard
+targets (``upper`` / ``lower``) are one-sided penalties: zero anywhere
+inside the allowed region, quadratic outside — they exclude pathological
+regimes (aggregation collapse, band evaporation) without distorting the
+optimum inside the valid region.
 
 TARGETS ships with PROVISIONAL values assembled from Buhl et al. (2011)-style
 field figures; replace them with the numbers you extract from the papers
@@ -14,7 +14,6 @@ before a production search. Per-target breakdowns are always returned so a
 failed candidate can be attributed to specific metrics.
 """
 
-import math
 from dataclasses import dataclass
 from typing import Literal
 
@@ -29,9 +28,13 @@ class Target:
 
     metric  key into the dict produced by metrics.compute_metrics
     value   empirical target ("match") or bound ("upper"/"lower")
-    scale   discrepancy that counts as one standard unit; sets the floor of
-            the normalization so a metric with tiny replicate variance cannot
-            dominate the sum
+    scale   discrepancy that counts as one standard unit. The sole
+            normalization: candidate replicate scatter is deliberately kept
+            OUT of the denominator — a candidate-dependent width lets
+            erratic dynamics widen their own tolerance (variance directly
+            improving the score), an exploit observed in both screening and
+            BO leaderboards. Campaign-wide replicate noise (measured: well
+            below every scale) is treated as absorbed into the scale.
     kind    "match" = two-sided fit, "upper"/"lower" = one-sided guard
     weight  relative importance multiplier
     """
@@ -55,6 +58,17 @@ TARGETS = [
     # encodes columnar shapes while APL frontal bands sit < 1, so it needs a
     # formation-specific value from the field papers before targeting.
     Target("profile_decay_r2", value=0.9, scale=0.05, kind="lower"),
+    # Peak location: the frontal-band signature is a dense front with the
+    # mass trailing BEHIND it, i.e. the profile peak near the band's leading
+    # edge (Buhl et al. 2011). The metric is the time-averaged band-proper
+    # rank of the densest slice (peak within the p5-p95 extent): ~0.5 =
+    # symmetric blob or peak wandering between relay stations, ~1 = peak
+    # pinned at the front. Reinstated 2026-09-10 after symmetric blobs
+    # topped the BO leaderboard; redefined the same day (the pooled
+    # extent-based version rewarded long straggler trails instead of
+    # frontal structure). PROVISIONAL value/scale: re-anchor against the
+    # redefined metric on validated frontal runs before the next campaign.
+    Target("profile_peak_position", value=0.9, scale=0.05, kind="lower"),
     # Kinematics: bands travel 3-4x slower than their marching individuals.
     # MEASURED, not just quoted: Telenga 1930 (via Uvarov 1977, table 34) —
     # Schistocerca instar I bands 25 vs 100 cm/min individual (ratio 0.25),
@@ -69,11 +83,20 @@ TARGETS = [
     # near-deterministic function of the intermittency parameters rather
     # than an emergent observable, and band_speed_ratio already penalizes
     # its consequences. It stays in the metrics as a diagnostic.
-    # Collective order: marching bands are highly aligned.
-    Target("global_order", value=0.9, scale=0.1),
+    # Alignment: marching bands are highly aligned WITH their direction of
+    # travel. heading_travel_alignment (mean projection of moving agents'
+    # headings onto the realized COM travel direction) replaced the plain
+    # global_order target on 2026-09-11: it penalizes the same heading
+    # dispersion (alignment = order x cos(mean-heading-vs-travel angle))
+    # while additionally failing non-translating clumps (NaN -> failure;
+    # order alone scored coherently-pointing frozen marchers as excellent)
+    # and coherent sideways/milling motion, which the band_speed_ratio
+    # target otherwise rewards. global_order stays as a diagnostic; the
+    # difference between the two isolates the misalignment angle.
+    Target("heading_travel_alignment", value=0.9, scale=0.1),
     # Guards: exclude aggregation collapse without rewarding any particular
     # density inside the valid region.
-    Target("local_density_p99", value=1000.0, scale=200.0, kind="upper"),
+    Target("local_density_p99", value=1500.0, scale=200.0, kind="upper"),
     Target("nn_distance_p5", value=0.005, scale=0.002, kind="lower"),
     Target("area_per_agent_trend", value=-1e-4, scale=5e-5, kind="lower"),
     # Guard against the opposite failure: the band evaporating into vapor.
@@ -94,15 +117,16 @@ def evaluate(
     """Score a parameter set from its replicate runs' metric dicts.
 
     Averages each metric over replicates, computes every target's normalized
-    squared discrepancy (replicate scatter widens the normalization, so noisy
-    metrics are automatically down-weighted), and sums them. Returns the
-    scalar score and a per-target breakdown for logging; a non-finite metric
-    yields FAILURE_SCORE for that term.
+    squared discrepancy against its fixed tolerance scale, and sums them.
+    Returns the scalar score and a per-target breakdown for logging; a
+    non-finite metric yields FAILURE_SCORE for that term.
     """
     targets = targets if targets is not None else TARGETS
     breakdown: dict[str, float] = {}
     for target in targets:
-        values = np.array([metrics.get(target.metric, np.nan) for metrics in replicate_metrics])
+        values = np.array(
+            [metrics.get(target.metric, np.nan) for metrics in replicate_metrics]
+        )
         breakdown[target.metric] = _score_target(target, values)
     return sum(breakdown.values()), breakdown
 
@@ -113,8 +137,7 @@ def _score_target(target: Target, replicate_values: np.ndarray) -> float:
     if len(finite) == 0:
         return FAILURE_SCORE * target.weight
     mean = float(finite.mean())
-    replicate_std = float(finite.std(ddof=1)) if len(finite) > 1 else 0.0
-    normalization = math.hypot(target.scale, replicate_std)
+    normalization = target.scale
 
     if target.kind == "match":
         discrepancy = mean - target.value

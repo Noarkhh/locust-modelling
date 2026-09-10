@@ -31,6 +31,27 @@ REPLICATE_WORKERS = int(
     )
 )
 
+# Pinned marching activity period (seconds) — MUST match the activityPeriod
+# default in the simulation's reference.conf (the empirical 45-minute bout,
+# Simpson 1981; pinned there 2026-09-11). Needed Python-side to bound each
+# candidate's duty cycle for world sizing.
+ACTIVITY_PERIOD_SECONDS = 2700.0
+
+
+def duty_cycle(values: dict[str, float]) -> float:
+    """Upper bound on the fraction of time a candidate's agents march.
+
+    With staggered activity timers the population's active fraction equals
+    activity / (activity + mean rest) from the first iteration, where the
+    mean rest is the minimum inactivity plus the mean geometric wait of the
+    per-second resumption draw. The band's centre cannot move faster than
+    duty x walking speed, which is what world sizing needs.
+    """
+    mean_rest = values["minimalInactivityPeriod"] + 1.0 / values[
+        "resumeMarchProbabilityPerSecond"
+    ]
+    return ACTIVITY_PERIOD_SECONDS / (ACTIVITY_PERIOD_SECONDS + mean_rest)
+
 
 @dataclass(frozen=True)
 class Scenario:
@@ -87,11 +108,14 @@ class Scenario:
     # whole number of containers (agents initialized outside the grid are
     # silently dropped otherwise) and the width widens to preserve density.
     full_height_patch: bool = False
-    # Search runs are single-worker on purpose: evaluations are independent,
-    # so packing one simulation per core beats splitting one simulation
-    # across cores (xinuk's spatial strips synchronize every iteration and
-    # the band concentrates the work in few strips). Use a multi-worker
-    # layout only for latency-sensitive full-scale validation runs.
+    # Horizontal-slab decomposition: workers_x splits the world into
+    # full-width rows, so in the quasi-1D geometry every worker owns a
+    # cross-section of the band at all times (splitting along the width
+    # would idle every worker the band is not in). Default single-worker:
+    # the per-iteration synchronization only pays off for models with heavy
+    # per-agent compute — measured 2026-09-11: the neural field gains just
+    # 1.15x from 4 workers, so it stays single-worker; the spin preset
+    # overrides this (Glauber loop amortizes the sync).
     workers_x: int = 1
     workers_y: int = 1
     sharding_mod: int = 144
@@ -114,23 +138,29 @@ class Scenario:
         width = area / height
         return width, height
 
-    def world_size(self, average_speed: float) -> tuple[float, float]:
-        """Width and height (meters) of the world, sized so the band cannot
-        lap the torus and collide with its own tail.
+    def world_size(self, values: dict[str, float]) -> tuple[float, float]:
+        """Width and height (meters) of the world, sized so the band's dense
+        body cannot lap the torus and collide with itself.
 
         The band marches mostly along the x-axis (the initial patch is a
         tall strip at the left edge), so only the width needs to cover the
-        travel: on a torus the front meets its own tail after traveling
-        ``world_width - band_length``. The travel over the whole run is
-        bounded by ``average_speed * duration`` (the band's centre cannot
-        outrun its agents), padded by ``band_travel_margin``; the patch
-        allowances cover the band's own extent. The candidate's OWN sampled
-        speed sizes its world, so slow candidates stay cheap and fast ones
-        stay uncontaminated.
+        travel. The band's centre cannot move faster than the candidate's
+        duty cycle times its walking speed (only active agents move), so
+        the travel budget is ``speed x duty x duration``, padded by
+        ``band_travel_margin``; the patch allowances cover the band's own
+        extent. Sizing from the candidate's OWN sampled speed and pause
+        parameters keeps slow or resty candidates cheap and gives
+        short-pause (high-duty) candidates the full room they need. A few
+        slow stragglers may still be overtaken by the front — harmless and
+        field-realistic recycling; what the budget excludes is the dense
+        band meeting itself.
         """
         duration = self.iterations_number * self.timestep_duration
         patch_width, patch_height = self.initial_area()
-        width = average_speed * duration * self.band_travel_margin + 3.0 * patch_width
+        travel_budget = (
+            values["averageSpeed"] * duty_cycle(values) * duration
+        )
+        width = travel_budget * self.band_travel_margin + 3.0 * patch_width
         # Align the width up to whole containers: the grid truncates
         # worldWidthMeters to floor(width / container), and a mismatch between
         # the config value and the effective grid desyncs the metrics' torus
@@ -150,7 +180,7 @@ class Scenario:
         world size depends on its ``averageSpeed``.
         """
         patch_width, patch_height = self.initial_area()
-        world_width, world_height = self.world_size(values["averageSpeed"])
+        world_width, world_height = self.world_size(values)
         overrides = {
             "particleAgentFactory": self.model,
             "agentAmount": self.agent_amount,
@@ -180,19 +210,23 @@ def neural_field_band_scenario(agent_amount: int = 2000, replicates: int = 3) ->
 
     The patch spans the full wrapped world height (no lateral edges), the
     geometry where the escape-driven marching regime was characterized
-    (2026-09-05): order sustained ~0.7-0.97 for 40+ sim-minutes, frontal
-    profile with pooled decay R^2 ~0.99. Burn-in 1500 iterations (7.5
-    sim-min) covers profile formation and timer desynchronization; heading
-    order itself equilibrates in seconds.
+    (2026-05-09): order sustained ~0.7-0.97 for 40+ sim-minutes, frontal
+    profile with pooled decay R^2 ~0.99.
+
+    Run length 36000 iterations (3 h) with burn-in 12000 (1 h): with the
+    intermittency pinned to the empirical 45/15-min cycle (2026-09-11),
+    the burn-in spans one full activity-rest cycle so every agent has
+    cycled at least once before measurement, and the measured window
+    covers two full cycles of the front-recycling dynamics.
     """
     return Scenario(
         model=NEURAL_FIELD,
         agent_amount=agent_amount,
         full_height_patch=True,
-        iterations_number=8000,
+        iterations_number=36000,
         timestep_duration=0.3,
         snapshot_frequency=100,
-        burn_in_iterations=1500,
+        burn_in_iterations=12000,
         replicates=replicates,
     )
 
@@ -205,15 +239,20 @@ def spin_band_scenario(agent_amount: int = 2000, replicates: int = 3) -> Scenari
     20+ sim-minutes at the NF-tuned strength 0.72; the spin model's own
     optimum is the campaign's job to find. Note the Glauber loop makes spin
     evaluations several times more expensive than neural-field ones.
+
+    Run length and burn-in follow the neural-field preset: 36000
+    iterations (3 h) with a one-full-cycle burn-in of 12000 under the
+    pinned 45/15-min intermittency, leaving a two-cycle measured window.
     """
     return Scenario(
         model=SPIN,
         agent_amount=agent_amount,
         full_height_patch=True,
-        iterations_number=8000,
+        workers_x=4,
+        iterations_number=36000,
         timestep_duration=0.3,
         snapshot_frequency=100,
-        burn_in_iterations=1500,
+        burn_in_iterations=12000,
         replicates=replicates,
     )
 
@@ -275,8 +314,14 @@ def evaluate_point(
     need every design row fully evaluated.
 
     Without an interim callback the replicates run concurrently, up to
-    REPLICATE_WORKERS at a time; with one they run sequentially, since
-    pruning is decided between replicates.
+    REPLICATE_WORKERS at a time. With a callback and multiple workers the
+    schedule is hybrid: the first replicate runs alone and the callback
+    decides pruning on it (deterministic failures — tripped guards,
+    collapse aborts — reveal themselves on any single replicate), then the
+    surviving replicates run concurrently with no further pruning
+    opportunity. Wall time is ~2 replicates instead of the full sequential
+    count. With a single worker the fully sequential per-replicate pruning
+    behaviour is kept.
     """
     evaluation_dir = Path(evaluation_dir)
     evaluation_dir.mkdir(parents=True, exist_ok=True)
@@ -293,7 +338,7 @@ def evaluate_point(
                 seed=base_seed + replicate,
                 sim_overrides=simulation_overrides,
             )
-            world_width, world_height = scenario.world_size(values["averageSpeed"])
+            world_width, world_height = scenario.world_size(values)
             return (
                 metrics_module.compute_metrics(
                     run_dir / "snapshots",
@@ -315,22 +360,34 @@ def evaluate_point(
     replicate_metrics = []
     failures = []
     pruned_after_replicates = None
-    if interim_callback is None and REPLICATE_WORKERS > 1:
-        workers = min(REPLICATE_WORKERS, scenario.replicates)
+
+    def record(replicate: int, outcome: tuple[dict[str, float] | None, str | None]) -> None:
+        metrics, error = outcome
+        if metrics is not None:
+            replicate_metrics.append(metrics)
+        else:
+            failures.append({"replicate": replicate, "error": error})
+
+    def run_concurrently(replicate_indices: range) -> None:
+        workers = min(REPLICATE_WORKERS, len(replicate_indices))
         with ThreadPoolExecutor(max_workers=workers) as executor:
-            outcomes = list(executor.map(run_replicate, range(scenario.replicates)))
-        for replicate, (metrics, error) in enumerate(outcomes):
-            if metrics is not None:
-                replicate_metrics.append(metrics)
-            else:
-                failures.append({"replicate": replicate, "error": error})
+            for replicate, outcome in zip(
+                replicate_indices, executor.map(run_replicate, replicate_indices)
+            ):
+                record(replicate, outcome)
+
+    if interim_callback is None and REPLICATE_WORKERS > 1:
+        run_concurrently(range(scenario.replicates))
+    elif interim_callback is not None and REPLICATE_WORKERS > 1:
+        record(0, run_replicate(0))
+        interim_score, _ = score_metrics(replicate_metrics)
+        if scenario.replicates > 1 and interim_callback(1, interim_score):
+            pruned_after_replicates = 1
+        else:
+            run_concurrently(range(1, scenario.replicates))
     else:
         for replicate in range(scenario.replicates):
-            metrics, error = run_replicate(replicate)
-            if metrics is not None:
-                replicate_metrics.append(metrics)
-            else:
-                failures.append({"replicate": replicate, "error": error})
+            record(replicate, run_replicate(replicate))
             if interim_callback is not None and replicate < scenario.replicates - 1:
                 interim_score, _ = score_metrics(replicate_metrics)
                 if interim_callback(replicate + 1, interim_score):

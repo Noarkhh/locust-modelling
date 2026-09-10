@@ -91,6 +91,7 @@ def compute_metrics(
     snapshot_metrics = []
     centers_of_mass = []
     along_band_per_snapshot = []
+    moving_heading_vectors = []
     positions_by_id = []
     for iteration in kept_iterations:
         snapshot = records[records["iter"] == iteration]
@@ -98,6 +99,11 @@ def compute_metrics(
         snapshot_metrics.append(metrics)
         centers_of_mass.append(center_of_mass)
         along_band_per_snapshot.append(along_band)
+        is_moving = ((snapshot["flags"] & 1) != 0) & (snapshot["speed"] > 0)
+        moving_headings = snapshot["heading"][is_moving if is_moving.any() else slice(None)]
+        moving_heading_vectors.append(
+            np.array([np.cos(moving_headings).mean(), np.sin(moving_headings).mean()])
+        )
         ordered = snapshot[np.argsort(snapshot["id"])]
         positions_by_id.append(
             (ordered["id"].astype(np.int64),
@@ -117,7 +123,17 @@ def compute_metrics(
     pooled = np.concatenate(
         [along - _profile_peak_position(along) for along in along_band_per_snapshot]
     )
-    aggregated.update(_density_profile(pooled, mean_band_width))
+    pooled_profile = _density_profile(pooled, mean_band_width)
+    # peak_position must NOT come from the pooled profile: the per-snapshot
+    # peak alignment pins the pooled peak at zero, degenerating the metric
+    # into tail-length asymmetry — a long straggler trail behind the band
+    # reads as "frontal" regardless of where the peak sits inside the band
+    # proper (observed on a relay-marching candidate whose peak was in the
+    # band's rear half 47% of the time, yet pooled to 0.87). It stays the
+    # per-snapshot band-proper rank, averaged over time like the other
+    # per-snapshot metrics.
+    del pooled_profile["profile_peak_position"]
+    aggregated.update(pooled_profile)
     # Pooling sums counts over snapshots; renormalize the one absolute density.
     aggregated["front_peak_density"] /= len(along_band_per_snapshot)
 
@@ -129,6 +145,23 @@ def compute_metrics(
         np.mean(np.linalg.norm(displacements, axis=1)) / snapshot_interval_seconds
     )
     aggregated["band_speed"] = band_speed
+
+    # Heading-travel alignment: mean projection of the moving agents'
+    # heading onto the band's realized direction of travel (from the COM
+    # track — an external reference the headings cannot define). Catches
+    # coherent sideways or milling motion that global_order alone misses
+    # and that the band_speed_ratio target otherwise rewards (transverse
+    # displacement inflates the Telenga denominator without advancing the
+    # band). NaN when the band does not travel measurably.
+    net_travel = displacements.sum(axis=0)
+    net_travel_norm = float(np.linalg.norm(net_travel))
+    if net_travel_norm > PROFILE_BIN_METERS:
+        travel_direction = net_travel / net_travel_norm
+        aggregated["heading_travel_alignment"] = float(
+            np.mean([vector @ travel_direction for vector in moving_heading_vectors[1:]])
+        )
+    else:
+        aggregated["heading_travel_alignment"] = float("nan")
     aggregated["mean_moving_speed"] = aggregated.pop("_mean_moving_speed")
 
     # Individual marching rate, Telenga-style (Telenga 1930, via Uvarov 1977
@@ -237,6 +270,16 @@ def _snapshot_metrics(
     metrics["elongation"] = metrics["band_length"] / max(metrics["band_width"], 1e-9)
 
     metrics.update(_density_profile(along_band, metrics["band_width"]))
+    # Band-proper peak rank: where the densest slice sits within the p5-p95
+    # band extent (0 = rear edge, 1 = front edge), clipped for peaks in the
+    # straggler tails outside it. Overrides _density_profile's full-extent
+    # version, which conflates peak location with tail-length asymmetry.
+    peak_meters = _profile_peak_position(along_band)
+    rear_edge = np.percentile(along_band, 5)
+    front_edge = np.percentile(along_band, 95)
+    metrics["profile_peak_position"] = float(
+        np.clip((peak_meters - rear_edge) / max(front_edge - rear_edge, 1e-9), 0.0, 1.0)
+    )
     metrics.update(_transverse_structure(across_band))
     metrics.update(_neighbour_metrics(positions, world_size, is_hopping))
     metrics.update(_occupancy(positions, world_size, agent_count))
@@ -282,8 +325,10 @@ def _density_profile(along_band: np.ndarray, band_width: float) -> dict[str, flo
     absolute density. Returns:
 
     - ``profile_peak_position``: fractional position of the densest slice
-      along the band, 0 = rearmost, 1 = frontmost. A frontal band peaks near
-      the front (~1); a symmetric blob peaks near 0.5.
+      within the profile's full extent, 0 = rearmost, 1 = frontmost. NOTE:
+      at snapshot level this is overridden by the band-proper rank (peak
+      within the p5-p95 extent), and the pooled version is discarded — see
+      compute_metrics/_snapshot_metrics.
     - ``profile_peak_contrast``: peak slice density divided by the mean slice
       density — how front-loaded the mass is (1 = flat profile).
     - ``profile_decay_fraction``: e-folding distance of the rearward decay

@@ -45,9 +45,18 @@ PARAMETERS = [
     Parameter("crowdedHopProbability", "shared", (0.0, 0.5), 0.2),
     Parameter("hopDuration", "shared", (0.1, 1.0), 0.3),
     Parameter("hopSpeed", "shared", (0.05, 0.3), 0.1),
-    Parameter("activityPeriod", "shared", (30.0, 2700.0), 270.0, log=True),
-    Parameter("minimalInactivityPeriod", "shared", (10.0, 2700.0), 90.0, log=True),
-    Parameter("resumeMarchProbabilityPerSecond", "shared", (1e-4, 0.1), 0.01, log=True),
+    # Marching intermittency follows Bach 2018's design. activityPeriod is
+    # NOT searched: pinned in reference.conf to the empirical 2700 s
+    # (locusts march ~45 min between pauses; Simpson 1981, Simpson & Ludlow
+    # 1986). Searching it let the optimizer satisfy the band_speed_ratio
+    # target trivially through the duty cycle (~1/3 across the whole
+    # 2026-09-10 BO leaderboard) — a kinematic solution the field data
+    # rules out. The pause structure IS searched, over the range Bach
+    # explored (I/p_res from 0/1 to 2700/0.0005; short pauses -> columnar,
+    # long -> frontal): lower bound 1 s instead of Bach's 0 to keep
+    # log-scale sampling. Defaults = Bach's frontal-band pair.
+    Parameter("minimalInactivityPeriod", "shared", (1.0, 2700.0), 900.0, log=True),
+    Parameter("resumeMarchProbabilityPerSecond", "shared", (5e-4, 1.0), 0.001, log=True),
     Parameter("occlusionThreshold", "shared", (5, 50), 25, integer=True),
     # --- SPP three-zone model ---
     Parameter("previousDirectionWeight", "spp", (0.0, 0.95), 0.6),
