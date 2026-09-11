@@ -107,7 +107,8 @@ def compute_metrics(
         ordered = snapshot[np.argsort(snapshot["id"])]
         positions_by_id.append(
             (ordered["id"].astype(np.int64),
-             np.column_stack([ordered["x"], ordered["y"]]).astype(np.float64))
+             np.column_stack([ordered["x"], ordered["y"]]).astype(np.float64),
+             (ordered["flags"] & 1).astype(bool))
         )
 
     aggregated = {
@@ -166,23 +167,33 @@ def compute_metrics(
 
     # Individual marching rate, Telenga-style (Telenga 1930, via Uvarov 1977
     # table 34): the distance a MARCHING hopper covers per minute-scale
-    # window — here each agent's minimum-image displacement per snapshot
-    # interval, taking the 75th percentile across agents (the median of the
-    # marching upper half, since ~40% are paused at any moment). This is the
-    # denominator against which the field band/individual ratio of 0.25-0.33
-    # was measured.
+    # window. Telenga paced hoppers that were actively marching, so the
+    # rate is CONDITIONED on marching: the mean minimum-image displacement
+    # rate over agents whose activity flag is set at both ends of the
+    # window (rest bouts are minutes long under the empirical cycle, so
+    # endpoint-active means active throughout). A population percentile
+    # (the earlier proxy) collapses together with the band speed once the
+    # marching fraction drops below the percentile, hiding exactly the
+    # intermittency-driven slowdown the ratio target exists to measure.
+    # NaN when no agent marches through any window: an entirely paused
+    # population has no defined marching rate.
     individual_rates = []
     world_row = np.array(world_size)
-    for (ids_a, pos_a), (ids_b, pos_b) in zip(positions_by_id[:-1], positions_by_id[1:]):
+    for (ids_a, pos_a, active_a), (ids_b, pos_b, active_b) in zip(
+        positions_by_id[:-1], positions_by_id[1:]
+    ):
         if len(ids_a) != len(ids_b) or not np.array_equal(ids_a, ids_b):
             continue
-        step = (pos_b - pos_a + world_row / 2) % world_row - world_row / 2
+        marching = active_a & active_b
+        if not marching.any():
+            continue
+        step = (pos_b[marching] - pos_a[marching] + world_row / 2) % world_row - world_row / 2
         rates = np.linalg.norm(step, axis=1) / snapshot_interval_seconds
-        individual_rates.append(float(np.percentile(rates, 75)))
-    individual_rate = float(np.mean(individual_rates)) if individual_rates else 0.0
+        individual_rates.append(float(rates.mean()))
+    individual_rate = float(np.mean(individual_rates)) if individual_rates else float("nan")
     aggregated["individual_marching_rate"] = individual_rate
     aggregated["band_speed_ratio"] = (
-        band_speed / individual_rate if individual_rate > 0 else 0.0
+        band_speed / individual_rate if individual_rate > 0 else float("nan")
     )
 
     area_per_agent = np.array(

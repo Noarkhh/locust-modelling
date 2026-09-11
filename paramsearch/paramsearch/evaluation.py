@@ -37,6 +37,14 @@ REPLICATE_WORKERS = int(
 # candidate's duty cycle for world sizing.
 ACTIVITY_PERIOD_SECONDS = 2700.0
 
+# Keep snapshot streams after metric extraction instead of deleting them.
+# Trajectories are not replayable (unseeded dynamics RNG), so stored
+# snapshots are the only record of the dynamics a score was computed from —
+# rerunning a candidate produces a different realization. ~12 MB per
+# replicate under the campaign presets; enable per submission on scratch
+# storage, leave off where disk is tight.
+KEEP_SNAPSHOTS = os.environ.get("LOCUST_KEEP_SNAPSHOTS", "") not in ("", "0", "false")
+
 
 def duty_cycle(values: dict[str, float]) -> float:
     """Upper bound on the fraction of time a candidate's agents march.
@@ -295,7 +303,7 @@ def evaluate_point(
     evaluation_dir: str | Path,
     scenario: Scenario,
     base_seed: int = 1,
-    keep_snapshots: bool = False,
+    keep_snapshots: bool | None = None,
     interim_callback: Callable[[int, float], bool] | None = None,
 ) -> dict:
     """Run all replicates of one parameter set and score it.
@@ -323,6 +331,8 @@ def evaluate_point(
     count. With a single worker the fully sequential per-replicate pruning
     behaviour is kept.
     """
+    if keep_snapshots is None:
+        keep_snapshots = KEEP_SNAPSHOTS
     evaluation_dir = Path(evaluation_dir)
     evaluation_dir.mkdir(parents=True, exist_ok=True)
     simulation_overrides = scenario.simulation_overrides(values)

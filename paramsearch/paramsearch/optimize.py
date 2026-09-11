@@ -24,6 +24,7 @@ import optuna
 from optuna.storages.journal import JournalFileBackend, JournalFileOpenLock
 
 from .evaluation import Scenario, campaign_scenario, evaluate_point
+from .objective import TARGETS, evaluate as score_metrics
 from .parameters import NEURAL_FIELD, Parameter, active_parameters
 
 # Prune a trial once its interim score (the replicates completed so far)
@@ -96,12 +97,15 @@ def warm_start_values(
     """Select the best screening rows as seed trials for the BO study.
 
     Only fully healthy rows qualify (every replicate succeeded), and rows
-    whose mean band_speed_ratio exceeds 1 are excluded on physical grounds:
-    a coherent band cannot travel faster than its marching individuals, and
-    screening surfaced fast-drifting blobs that scored well by exploiting
-    the noise-widened ratio normalization. Values are restricted to the
-    searched parameters; anything frozen by --only stays at its default.
+    whose mean band_speed_ratio exceeds 1.5 are excluded as fast-drifting
+    artifacts (legitimate continuous marchers sit near 1.0 because the
+    hop-inclusive band speed can slightly exceed the p75 individual rate).
+    At most one row per Saltelli base family is taken: adjacent design rows
+    differ in a single coordinate, so the naive top-N is near-duplicates of
+    one base sample. Values are restricted to the searched parameters;
+    anything frozen by --only stays at its default.
     """
+    rows_per_family = len(parameters) + 2
     candidates = []
     for result_file in campaign_dir.glob("evaluations/eval-*/result.json"):
         result = json.loads(result_file.read_text())
@@ -110,15 +114,33 @@ def warm_start_values(
         mean_ratio = sum(
             metrics["band_speed_ratio"] for metrics in result["replicate_metrics"]
         ) / len(result["replicate_metrics"])
-        if mean_ratio > 1.0:
+        if mean_ratio > 1.5:
             continue
-        candidates.append((result["score"], result["values"]))
+        row_index = int(result_file.parent.name.split("-")[1])
+        # Rank by a rescoring that EXCLUDES the ratio target: stored metric
+        # values predate the flag-conditioned ratio redefinition
+        # (2026-09-12) and cannot be recomputed (snapshots deleted), so the
+        # stale ratio term would mis-rank candidates. Morphology, alignment
+        # and guards are definition-stable.
+        ranking_targets = [t for t in TARGETS if t.metric != "band_speed_ratio"]
+        ranking_score, _ = score_metrics(result["replicate_metrics"], ranking_targets)
+        candidates.append(
+            (ranking_score, row_index // rows_per_family, result["values"])
+        )
     candidates.sort(key=lambda scored: scored[0])
     searched = {parameter.name for parameter in parameters}
-    return [
-        {name: value for name, value in values.items() if name in searched}
-        for _, values in candidates[:count]
-    ]
+    selected: list[dict[str, float]] = []
+    families_used: set[int] = set()
+    for _, family, values in candidates:
+        if family in families_used:
+            continue
+        families_used.add(family)
+        selected.append(
+            {name: value for name, value in values.items() if name in searched}
+        )
+        if len(selected) == count:
+            break
+    return selected
 
 
 def load_study(
