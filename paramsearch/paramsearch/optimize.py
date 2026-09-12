@@ -27,13 +27,14 @@ from .evaluation import Scenario, campaign_scenario, evaluate_point
 from .objective import TARGETS, evaluate as score_metrics
 from .parameters import NEURAL_FIELD, Parameter, active_parameters
 
-# Prune a trial once its interim score (the replicates completed so far)
-# reaches this value. One failure-scored target contributes 100 (see
-# objective.FAILURE_SCORE), so the threshold means "at least one target in
-# outright failure territory" — well clear of the 18-60 single-replicate
-# scores the replicate-spread analysis measured for genuinely good
-# candidates, whose replicate noise must never trigger pruning.
-PRUNE_SCORE_DEFAULT = 100.0
+# Pruning is OFF by default (0 = disabled): under a fixed per-task CPU
+# allocation, skipping replicates saves no allocated core-hours (idle
+# cores are billed) while the hybrid schedule doubles surviving trials'
+# wall time — all replicates concurrently is cheaper and faster. Enable
+# with --prune-above (e.g. 100 = one target in failure territory) ONLY
+# for single-CPU sequential workers, where pruning genuinely saves
+# allocation.
+PRUNE_SCORE_DEFAULT = 0.0
 
 
 def suggest_values(
@@ -58,8 +59,21 @@ def suggest_values(
     return values
 
 
-def make_objective(parameters: list[Parameter], scenario: Scenario, output_dir: Path):
-    """Build the Optuna objective closure around the shared evaluation path."""
+def make_objective(
+    parameters: list[Parameter],
+    scenario: Scenario,
+    output_dir: Path,
+    prune: bool = True,
+):
+    """Build the Optuna objective closure around the shared evaluation path.
+
+    With ``prune=False`` no interim callback is passed, so all replicates
+    run concurrently (evaluate_point's parallel path). Under a fixed
+    per-task CPU allocation this is the cheaper AND faster schedule:
+    a pruned trial saves no allocated core-hours (the cores are billed
+    idle), while a surviving hybrid trial pays double wall time.
+    Pruning only pays when workers are allocated a single CPU.
+    """
 
     def objective(trial: optuna.Trial) -> float:
         values = suggest_values(trial, parameters)
@@ -75,7 +89,7 @@ def make_objective(parameters: list[Parameter], scenario: Scenario, output_dir: 
             scenario,
             # Fresh seeds per trial so no two trials share a replicate draw.
             base_seed=1000 * (trial.number + 1),
-            interim_callback=report_interim_score,
+            interim_callback=report_interim_score if prune else None,
         )
         # Persist the diagnosis with the trial so `optuna.load_study` alone
         # can answer "which metric killed this candidate".
@@ -254,7 +268,9 @@ def main() -> None:
             study.enqueue_trial(values)
         print(f"enqueued {len(seeds)} warm-start trials from {arguments.warm_start}")
     study.optimize(
-        make_objective(parameters, scenario, arguments.out),
+        make_objective(
+            parameters, scenario, arguments.out, prune=arguments.prune_above > 0
+        ),
         n_trials=arguments.trials,
         gc_after_trial=True,
     )

@@ -46,9 +46,10 @@ BO_DIR="${BO_DIR:?set to the study output directory (shared FS)}"
 ONLY_PARAMS="${ONLY_PARAMS:-}"   # post-screening restriction, comma-separated
 PARAMSEARCH_DIR="${PARAMSEARCH_DIR:?set to the absolute path of the paramsearch directory}"
 export PYTHONPATH="$PARAMSEARCH_DIR${PYTHONPATH:+:$PYTHONPATH}"
-# 16 allocated CPUs = 4 concurrent replicate JVMs x 4 xinuk workers each;
-# without this cap the replicate pool would try 16 concurrent JVMs.
-export LOCUST_REPLICATE_WORKERS=4
+# Cap the replicate pool below the CPU count when simulations are
+# multi-worker (CPUs = JVMs x xinuk workers each); default 5 = all
+# replicates concurrent.
+export LOCUST_REPLICATE_WORKERS="${LOCUST_REPLICATE_WORKERS:-5}"
 # -----------------------------------------------------------------------------
 
 python -m paramsearch.optimize \
