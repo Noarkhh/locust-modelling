@@ -134,6 +134,14 @@ def compute_metrics(
     # per-snapshot band-proper rank, averaged over time like the other
     # per-snapshot metrics.
     del pooled_profile["profile_peak_position"]
+    # profile_decay_r2 likewise must NOT come from the pooled profile:
+    # summing many differently-shaped instantaneous profiles manufactures a
+    # smooth aggregate decay (observed: pooled R^2 0.985 on a run whose
+    # per-snapshot profiles are visibly non-exponential), so the pooled fit
+    # tests the time-AVERAGED shape, not whether the band actually holds an
+    # exponential profile. The targeted value is the mean of per-snapshot
+    # fits; the pooled fit is kept as a separate diagnostic.
+    aggregated["profile_decay_r2_pooled"] = pooled_profile.pop("profile_decay_r2")
     aggregated.update(pooled_profile)
     # Pooling sums counts over snapshots; renormalize the one absolute density.
     aggregated["front_peak_density"] /= len(along_band_per_snapshot)
@@ -165,9 +173,9 @@ def compute_metrics(
         aggregated["heading_travel_alignment"] = float("nan")
     aggregated["mean_moving_speed"] = aggregated.pop("_mean_moving_speed")
 
-    # Individual marching rate, Telenga-style (Telenga 1930, via Uvarov 1977
-    # table 34): the distance a MARCHING hopper covers per minute-scale
-    # window. Telenga paced hoppers that were actively marching, so the
+    # Individual marching rate, Telenga-style (Telenga 1930, via Uvarov
+    # 1977 p. 173 — the figures are in the text, not table 34): the
+    # distance a MARCHING hopper covers per minute-scale window. Telenga paced hoppers that were actively marching, so the
     # rate is CONDITIONED on marching: the mean minimum-image displacement
     # rate over agents whose activity flag is set at both ends of the
     # window (rest bouts are minutes long under the empirical cycle, so

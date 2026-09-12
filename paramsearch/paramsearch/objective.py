@@ -57,7 +57,17 @@ TARGETS = [
     # NOTE: elongation is deliberately untargeted for now — a target > 1
     # encodes columnar shapes while APL frontal bands sit < 1, so it needs a
     # formation-specific value from the field papers before targeting.
-    Target("profile_decay_r2", value=0.9, scale=0.05, kind="lower"),
+    # Per-snapshot mean fit quality (redefined 2026-09-12: the pooled fit
+    # manufactured smooth exponentials from time-averaging — 0.98 on runs
+    # with visibly non-exponential instantaneous profiles). ASPIRATIONAL
+    # target 1.0 (2026-09-12, user decision): the literature states the
+    # decay is exponential, and a log-linear R^2 cannot sharply separate
+    # exponential from other monotone decays at a reachable threshold —
+    # so the target is perfection itself. No candidate satisfies it; every
+    # candidate pays proportionally to its distance, so the optimizer is
+    # always pulled toward more exponential profiles (exp ~0.99 pays ~0,
+    # linear ~0.92 pays ~0.6, bumpy ~0.5 pays ~25).
+    Target("profile_decay_r2", value=1.0, scale=0.03, kind="lower"),
     # Peak location: the frontal-band signature is a dense front with the
     # mass trailing BEHIND it, i.e. the profile peak near the band's leading
     # edge (Buhl et al. 2011). The metric is the time-averaged band-proper
@@ -68,11 +78,12 @@ TARGETS = [
     # extent-based version rewarded long straggler trails instead of
     # frontal structure). PROVISIONAL value/scale: re-anchor against the
     # redefined metric on validated frontal runs before the next campaign.
-    Target("profile_peak_position", value=0.9, scale=0.05, kind="lower"),
+    Target("profile_peak_position", value=1.0, scale=0.1, kind="lower"),
     # Kinematics: bands travel 3-4x slower than their marching individuals.
-    # MEASURED, not just quoted: Telenga 1930 (via Uvarov 1977, table 34) —
+    # MEASURED, not just quoted: Telenga 1930 (via Uvarov 1977, p. 173) —
     # Schistocerca instar I bands 25 vs 100 cm/min individual (ratio 0.25),
-    # instar V 333 vs 1000 cm/min (ratio 0.33). The metric's denominator
+    # instar V 333 vs 1000 cm/min (ratio 0.33). Mechanism per the same
+    # page: marching fraction, "as low as 10%" (Ellis & Ashall 1957). The metric's denominator
     # (individual_marching_rate) mirrors Telenga's method: distance covered
     # by a marching hopper per minute-scale window. Caveats: Schistocerca,
     # instar-dependent, and Uvarov notes band speed also varies with band
@@ -93,7 +104,11 @@ TARGETS = [
     # and coherent sideways/milling motion, which the band_speed_ratio
     # target otherwise rewards. global_order stays as a diagnostic; the
     # difference between the two isolates the misalignment angle.
-    Target("heading_travel_alignment", value=0.9, scale=0.1),
+    # ASPIRATIONAL target 1.0 (2026-09-12, user decision, same rationale
+    # as profile_decay_r2): perfect travel-alignment is unreachable, so
+    # every candidate is pulled toward tighter alignment in proportion to
+    # its dispersion instead of coasting once past a threshold.
+    Target("heading_travel_alignment", value=1.0, scale=0.05),
     # Guards: exclude aggregation collapse without rewarding any particular
     # density inside the valid region.
     Target("local_density_p99", value=1500.0, scale=200.0, kind="upper"),
