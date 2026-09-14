@@ -56,6 +56,12 @@ def main() -> None:
         "including burn-in — for diagnosing formation and early dynamics); "
         "default keeps the scenario's burn-in start",
     )
+    parser.add_argument(
+        "--patch-width",
+        type=float,
+        default=None,
+        help="override initial_patch_width [m] (band thickness at launch)",
+    )
     arguments = parser.parse_args()
 
     trial = json.loads(arguments.trial.read_text())
@@ -69,6 +75,8 @@ def main() -> None:
         scenario = replace(scenario, iterations_number=arguments.iterations)
     if arguments.snapshot_frequency is not None:
         scenario = replace(scenario, snapshot_frequency=arguments.snapshot_frequency)
+    if arguments.patch_width is not None:
+        scenario = replace(scenario, initial_patch_width=arguments.patch_width)
     values = trial["values"]
     overrides = scenario.simulation_overrides(values)
     if arguments.snapshot_start is not None:

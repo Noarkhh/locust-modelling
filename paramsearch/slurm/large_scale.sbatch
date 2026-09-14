@@ -47,4 +47,5 @@ python3 "$PARAMSEARCH_DIR/scripts/large_scale_run.py" \
     --out "${OUT_DIR:?}" \
     ${SNAPSHOT_START:+--snapshot-start "$SNAPSHOT_START"} \
     ${ITERATIONS:+--iterations "$ITERATIONS"} \
-    ${SNAPSHOT_FREQ:+--snapshot-frequency "$SNAPSHOT_FREQ"}
+    ${SNAPSHOT_FREQ:+--snapshot-frequency "$SNAPSHOT_FREQ"} \
+    ${PATCH_WIDTH:+--patch-width "$PATCH_WIDTH"}
