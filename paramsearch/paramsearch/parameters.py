@@ -43,7 +43,12 @@ PARAMETERS = [
     Parameter("averageSpeed", "shared", (0.001, 0.05), 0.01),
     Parameter("hopProbability", "shared", (0.0, 0.05), 0.01),
     Parameter("crowdedHopProbability", "shared", (0.0, 0.5), 0.2),
-    Parameter("hopDuration", "shared", (0.1, 1.0), 0.3),
+    # Lower bound = one timestep (0.3 s): hopDurationTimesteps truncates to
+    # int, so durations below the timestep silently disable hopping while
+    # leaving the hop parameters sampled and attributed (found 2026-09-13:
+    # the then-leading BO candidate ran hop-free at hopDuration 0.14 s).
+    # Sub-timestep hops are declared out of scope rather than rounded up.
+    Parameter("hopDuration", "shared", (0.3, 1.0), 0.3),
     Parameter("hopSpeed", "shared", (0.05, 0.3), 0.1),
     # Marching intermittency follows Bach 2018's design. activityPeriod is
     # NOT searched: pinned in reference.conf to the empirical 2700 s

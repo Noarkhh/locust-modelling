@@ -82,9 +82,16 @@ class Scenario:
     # changing the population size keeps the starting density constant
     # instead of silently diluting or compressing the group.
     initial_density: float = 750.0
-    # Height/width ratio of the starting patch (reference strip: 21.6/4.12).
-    # The patch is clamped to the world height, widening to preserve area.
-    initial_area_aspect: float = 5.2
+    # Fixed along-march patch width [m] (2026-09-14 decision, replacing
+    # the earlier aspect-ratio rule): with width and density constant, the
+    # patch height — and hence the world height / front length — carries
+    # ALL population growth (h proportional to N), making the initial
+    # condition and the relaxed band length scale-invariant per unit of
+    # front: a larger swarm is a LONGER front, not a thicker band. This
+    # also removes the torus self-wrap hazard the aspect-scaled patch
+    # created at large N. Default = the 2000-agent campaign reference
+    # width, so calibration geometry is unchanged.
+    initial_patch_width: float = 2000 / 750.0 / 3.6
     # Safety factor on the band's travel budget when sizing the world. The
     # band's centre cannot move faster than its agents, so
     # averageSpeed * run duration bounds the travel; the margin absorbs the
@@ -116,14 +123,17 @@ class Scenario:
     # whole number of containers (agents initialized outside the grid are
     # silently dropped otherwise) and the width widens to preserve density.
     full_height_patch: bool = False
-    # Horizontal-slab decomposition: workers_x splits the world into
-    # full-width rows, so in the quasi-1D geometry every worker owns a
-    # cross-section of the band at all times (splitting along the width
-    # would idle every worker the band is not in). Default single-worker:
-    # the per-iteration synchronization only pays off for models with heavy
-    # per-agent compute — measured 2026-09-11: the neural field gains just
-    # 1.15x from 4 workers, so it stays single-worker; the spin preset
-    # overrides this (Glauber loop amortizes the sync).
+    # Worker decomposition axis matters more than worker count: measured
+    # 2026-09-14 (250k thread dump: 16 of 48 workers held 87% of all CPU),
+    # workers_x splits along the MARCH axis, so a compact band concentrates
+    # its agents into the few workers owning its current x-range and idles
+    # the rest — parallel efficiency ~ band x-extent / world width. All
+    # earlier "sync-bound" scaling numbers (NF 1.15x, spin 1.92x at 4
+    # workers) were this geometry starvation. For the quasi-1D band
+    # scenarios the parallelism must go on workers_y: the band spans the
+    # full wrapped height, so every y-slice worker owns a live band
+    # cross-section at all times. Default single-worker; band presets set
+    # workers_y.
     workers_x: int = 1
     workers_y: int = 1
     sharding_mod: int = 144
@@ -132,13 +142,14 @@ class Scenario:
     def initial_area(self) -> tuple[float, float]:
         """Width and height (meters) of the starting patch.
 
-        Sized so the patch holds ``agent_amount`` at ``initial_density`` with
-        the requested aspect ratio. With ``full_height_patch`` the height is
-        aligned down to a whole number of containers (it becomes the world
-        height) and the width compensates to preserve the density.
+        Sized so the patch holds ``agent_amount`` at ``initial_density`` at
+        the fixed ``initial_patch_width``: the height scales linearly with
+        the population. With ``full_height_patch`` the height is aligned
+        down to a whole number of containers (it becomes the world height)
+        and the width compensates to preserve the density.
         """
         area = self.agent_amount / self.initial_density
-        height = (area * self.initial_area_aspect) ** 0.5
+        height = area / self.initial_patch_width
         if self.full_height_patch:
             height = max(
                 math.floor(height / self.agent_container_size), 2
@@ -256,7 +267,7 @@ def spin_band_scenario(agent_amount: int = 2000, replicates: int = 3) -> Scenari
         model=SPIN,
         agent_amount=agent_amount,
         full_height_patch=True,
-        workers_x=4,
+        workers_y=4,
         iterations_number=36000,
         timestep_duration=0.3,
         snapshot_frequency=100,
