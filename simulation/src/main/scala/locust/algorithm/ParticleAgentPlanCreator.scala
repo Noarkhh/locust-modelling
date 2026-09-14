@@ -16,6 +16,14 @@ import pl.edu.agh.locust.model.{AgentContainer, AgentBehaviour, ParticleAgent}
 import pl.edu.agh.locust.config.ParticleAgentConfig
 import quadtree.{QuadTree, Point}
 
+object ParticleAgentPlanCreator {
+  private val agentCompanionInitialized = new java.util.concurrent.atomic.AtomicBoolean(false)
+
+  def ensureAgentCompanionInitialized()(implicit config: ParticleAgentConfig): Unit =
+    if (agentCompanionInitialized.compareAndSet(false, true))
+      config.particleAgentFactory.initAgentCompanion()
+}
+
 final case class ParticleAgentPlanCreator() extends PlanCreator[ParticleAgentConfig] {
   override def finalize(worldShard: pl.edu.agh.xinuk.model.WorldShard)(implicit
       config: ParticleAgentConfig
@@ -27,6 +35,7 @@ final case class ParticleAgentPlanCreator() extends PlanCreator[ParticleAgentCon
       cellState: CellState,
       neighbourContents: Map[Direction, CellContents]
   )(implicit config: ParticleAgentConfig): (Plans, Metrics) = {
+    ParticleAgentPlanCreator.ensureAgentCompanionInitialized()
     createContainerPlans(
       iteration,
       cellId.asInstanceOf[GridCellId],
