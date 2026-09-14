@@ -52,7 +52,8 @@ PARAMS=$(python3 "$PARAMSEARCH_DIR/scripts/print_overrides.py" \
     --workers-y "${WORKERS_Y:-384}" \
     --seed "${SEED:-1}" \
     ${SNAPSHOT_START:+--snapshot-start "$SNAPSHOT_START"} \
-    ${ITERATIONS:+--iterations "$ITERATIONS"})
+    ${ITERATIONS:+--iterations "$ITERATIONS"} \
+    ${PATCH_WIDTH:+--patch-width "$PATCH_WIDTH"})
 PARAMS="$PARAMS -Dparticle-agent.config.snapshotPath=$SNAP_DIR"
 
 #===============================================================================

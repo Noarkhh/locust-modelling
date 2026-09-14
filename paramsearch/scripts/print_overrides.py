@@ -28,6 +28,12 @@ def main() -> None:
     parser.add_argument("--snapshot-start", type=int, default=None)
     parser.add_argument("--iterations", type=int, default=None)
     parser.add_argument("--seed", type=int, default=1)
+    parser.add_argument(
+        "--patch-width",
+        type=float,
+        default=None,
+        help="override initial_patch_width [m] (band thickness at launch)",
+    )
     arguments = parser.parse_args()
 
     trial = json.loads(arguments.trial.read_text())
@@ -39,6 +45,8 @@ def main() -> None:
     )
     if arguments.iterations is not None:
         scenario = replace(scenario, iterations_number=arguments.iterations)
+    if arguments.patch_width is not None:
+        scenario = replace(scenario, initial_patch_width=arguments.patch_width)
     overrides = scenario.simulation_overrides(trial["values"])
     overrides.update(trial["values"])
     overrides["randomSeed"] = arguments.seed
