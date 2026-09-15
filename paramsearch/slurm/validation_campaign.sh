@@ -46,11 +46,11 @@ submit() {  # model trial agents workers nodes wall
         local timeout_s=$(( (${wall%%:*} - 1) * 3600 ))
         cmd=(sbatch --job-name="$name" --cpus-per-task="$workers"
              --mem="${mem_gb}G" --time="$wall"
-             --export=ALL,TRIAL_RESULT="$trial_result",AGENTS="$agents",WORKERS=1,WORKERS_Y="$workers",SEED=1,OUT_DIR="$out_dir",SNAPSHOT_START=0,ITERATIONS=36100,LOCUST_RUN_TIMEOUT="$timeout_s"
+             --export=ALL,TRIAL_RESULT="$trial_result",AGENTS="$agents",WORKERS=1,WORKERS_Y="$workers",SEED=1,OUT_DIR="$out_dir",SNAPSHOT_START=0,ITERATIONS=36100,LOCUST_KEEP_SNAPSHOTS=1,LOCUST_RUN_TIMEOUT="$timeout_s"
              "$SLURM_DIR/large_scale.sbatch")
     else
         cmd=(sbatch --job-name="$name" --nodes="$nodes" --time="$wall"
-             --export=ALL,TRIAL_RESULT="$trial_result",AGENTS="$agents",WORKERS_Y="$workers",SEED=1,OUT_DIR="$out_dir",SNAPSHOT_START=0,ITERATIONS=36100
+             --export=ALL,TRIAL_RESULT="$trial_result",AGENTS="$agents",WORKERS_Y="$workers",SEED=1,OUT_DIR="$out_dir",SNAPSHOT_START=0,ITERATIONS=36100,LOCUST_KEEP_SNAPSHOTS=1
              "$SLURM_DIR/large_scale_distributed.sbatch")
     fi
     if [ "${DRY_RUN:-0}" = "1" ]; then
