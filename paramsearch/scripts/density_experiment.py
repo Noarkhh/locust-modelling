@@ -1,12 +1,15 @@
-"""Density-variation experiment: top-4 candidates of each model at 2000 agents,
-varying initial density (500/250/100 locusts/m^2) with the band thickness held
-constant, so only the front length changes.
+"""Density-dilution experiment: top-4 candidates of each model in a band of
+FIXED footprint, varying the density (500/250/100 locusts/m^2) by lowering the
+population rather than by stretching the world.
 
-The scenario fixes ``initial_patch_width`` (along-march thickness) and derives
-the patch height (front length) as agent_amount / (density * patch_width); with
-agent_amount fixed at 2000, lowering the density stretches the front while the
-thickness stays put. Everything else follows the campaign preset (36000
-iterations, one-cycle burn-in, 5 replicates).
+The starting patch area is derived as agent_amount / initial_density, so holding
+that area constant keeps both the band thickness (initial_patch_width) and the
+front length fixed; the world size (which depends only on the candidate's speed
+and the fixed patch width) is likewise identical across densities. To vary the
+density within that fixed footprint we scale the population: anchoring on the
+densest cell (2000 agents at 500/m^2, area 4 m^2), density D uses round(D * area)
+agents -- 2000 / 1000 / 400 agents for 500 / 250 / 100 /m^2. This isolates
+density (dilution) from geometry, unlike the earlier stretch-the-front design.
 
   python scripts/density_experiment.py --index $SLURM_ARRAY_TASK_ID \
       --out <dir> --bo-root <$SCRATCH/paramsearch-runs>
@@ -23,6 +26,12 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from paramsearch.evaluation import campaign_scenario, evaluate_point
 
 DENSITIES = [500.0, 250.0, 100.0]
+# Fixed band footprint: anchor on the densest cell (2000 agents at 500/m^2).
+# area = agents / density is held constant, so the patch geometry is identical
+# across densities and only the population changes.
+REF_AGENTS = 2000
+REF_DENSITY = 500.0
+PATCH_AREA = REF_AGENTS / REF_DENSITY  # m^2, held constant across all cells
 TRIALS = {
     "bo2-nf": ["00756", "01030", "01273", "00886"],
     "bo2-spin": ["00514", "00305", "00457", "00682"],
@@ -51,11 +60,13 @@ def main() -> None:
     trial_file = arguments.bo_root / model_dir / "trials" / f"trial-{trial}" / "result.json"
     trial_data = json.loads(trial_file.read_text())
 
-    # campaign preset, but only the initial density changes; initial_patch_width
-    # (thickness) stays at the preset value, so the front length scales with 1/density.
+    # Fixed footprint: agent_amount / initial_density == PATCH_AREA, so the patch
+    # geometry (thickness and front length) and the world are identical across
+    # densities; lowering the density lowers the population, not the geometry.
+    agent_amount = round(density * PATCH_AREA)
     scenario = replace(
         campaign_scenario(trial_data["scenario"]["model"], replicates=arguments.replicates),
-        agent_amount=2000,
+        agent_amount=agent_amount,
         initial_density=float(density),
     )
     cell_dir = arguments.out / f"{model_dir.split('-')[1]}-{trial}-d{int(density)}"
@@ -65,9 +76,10 @@ def main() -> None:
     result = evaluate_point(
         trial_data["values"], cell_dir, scenario, base_seed=1000 * (arguments.index + 1)
     )
-    print(f"{cell_dir.name}: score {result['score']:.3g}, "
+    print(f"{cell_dir.name}: {agent_amount} agents, score {result['score']:.3g}, "
           f"failures {len(result['failures'])}, "
-          f"world {scenario.world_size(trial_data['values'])}")
+          f"world {scenario.world_size(trial_data['values'])}, "
+          f"patch {scenario.initial_area()}")
 
 
 if __name__ == "__main__":

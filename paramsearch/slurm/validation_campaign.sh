@@ -36,7 +36,7 @@ submit() {  # model trial agents workers nodes wall
     [ -n "$ONLY_SCALE" ] && [ "$ONLY_SCALE" != "$scale_label" ] && return 0
     [ -n "$ONLY_TRIAL" ] && [ "$ONLY_TRIAL" != "$trial" ] && return 0
     local trial_result="$SCRATCH_RUNS/bo2-$model/trials/trial-$trial/result.json"
-    local out_dir="$SCRATCH_RUNS/valcamp/$model-$trial-$scale_label"
+    local out_dir="$SCRATCH_RUNS/${VALCAMP_DIR:-valcamp}/$model-$trial-$scale_label"
     local name="vc-$model-$trial-$scale_label"
     local cmd
     if [ "$nodes" -eq 1 ]; then

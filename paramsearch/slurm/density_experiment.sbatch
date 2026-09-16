@@ -1,8 +1,9 @@
 #!/bin/bash
-# Density-variation experiment: one array task per (candidate, density) cell.
+# Density-dilution experiment: one array task per (candidate, density) cell.
 #   sbatch --array=0-23 slurm/density_experiment.sbatch
-# Each task runs 5 concurrent replicates of a 2000-agent campaign scenario at
-# the cell's density; snapshots retained for profile / band-length analysis.
+# Each task runs 5 concurrent replicates of a campaign scenario in a band of
+# FIXED footprint, diluting the population (2000/1000/400 agents) to reach
+# 500/250/100 /m^2; snapshots retained for profile / band-length analysis.
 #SBATCH --job-name=locust-density
 #SBATCH -A plglocustsim01-cpu
 #SBATCH -p plgrid

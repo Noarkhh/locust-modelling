@@ -56,7 +56,14 @@ object AgentSnapshotWriter {
       buffer.put(flags.toByte)
     }
     synchronized {
-      get().foreach(_.write(buffer.array()))
+      get().foreach { stream =>
+        stream.write(buffer.array())
+        // Flush every frame so snapshots are durably on disk as the run
+        // proceeds, rather than relying on close() (which is skipped on a
+        // walltime kill and, under concurrent Lustre load, has silently lost
+        // whole streams). One flush per snapshot interval is cheap.
+        stream.flush()
+      }
     }
   }
 
