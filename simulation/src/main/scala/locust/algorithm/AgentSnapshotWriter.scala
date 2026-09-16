@@ -24,6 +24,12 @@ object AgentSnapshotWriter {
 
   private var out: Option[OutputStream] = None
   private var initialized = false
+  // Once the stream is closed (JVM/cluster shutdown) it must never be
+  // reopened: a snapshot append that races in after close() would otherwise
+  // re-initialize get() and, on a fresh stream, truncate the whole file to
+  // that last partial frame (the cause of the "one tiny frame survived"
+  // snapshot loss). After close we drop any late append rather than reopen.
+  private var closed = false
 
   def shouldSnapshot(iteration: Long)(implicit config: ParticleAgentConfig): Boolean =
     config.snapshotPath.nonEmpty &&
@@ -70,17 +76,21 @@ object AgentSnapshotWriter {
   def close(): Unit = synchronized {
     out.foreach(_.close())
     out = None
-    initialized = false
+    closed = true
   }
 
   private def get()(implicit config: ParticleAgentConfig): Option[OutputStream] = {
+    if (closed) return None // never reopen after close (see `closed`)
     if (!initialized) {
       initialized = true
       val dir = Paths.get(config.snapshotPath)
       Files.createDirectories(dir)
       val runtimeName = ManagementFactory.getRuntimeMXBean.getName.replace('@', '-')
       val file = dir.resolve(s"snapshots-$runtimeName.bin").toFile
-      out = Some(new BufferedOutputStream(new FileOutputStream(file), 1 << 16))
+      // Append mode: even if a stream is ever reopened, it extends the file
+      // rather than truncating it. One file per JVM (unique runtime name), so
+      // append never mixes runs.
+      out = Some(new BufferedOutputStream(new FileOutputStream(file, /*append=*/ true), 1 << 16))
     }
     out
   }

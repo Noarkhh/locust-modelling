@@ -177,3 +177,180 @@ def neighbour_anisotropy(
         "bearing_histogram": histogram.tolist(),
         "front_back_excess": fore_aft / max(lateral, 1e-12),
     }
+
+
+def marking_experiment_v2(
+    snapshot_dir: str | Path,
+    world_width: float,
+    world_height: float,
+    front_band: tuple[float, float] = (0.7, 0.9),
+    rear_band: tuple[float, float] = (0.1, 0.3),
+    sample_fraction: float = 0.10,
+    sample_cap: int = 1000,
+    burn_in_iteration: int = 0,
+    seed: int = 0,
+) -> dict:
+    """Cohort-redistribution mixing measured from sub-sampled band bands.
+
+    A variant of :func:`marking_experiment` that (a) marks cohorts from
+    interior position bands rather than the extreme tails — the frontmost
+    ``front_band`` and rearmost ``rear_band`` quantile ranges of the
+    along-march position rank (0 = rear, 1 = front), excluding the outer
+    10% at each end — and (b) tracks a fixed random sub-sample of
+    ``min(sample_fraction * N, sample_cap)`` marked individuals per cohort,
+    so the cost is bounded at large populations.
+
+    At the first post-burn-in frame each cohort's members are fixed by id;
+    for every subsequent frame the mean and standard deviation of their
+    position rank are recorded. Mixing shows up as the cohort means drifting
+    toward 0.5 and the standard deviations growing.
+
+    Returns the per-cohort mean/std rank time series and a signed scalar
+    ``cohort_separation``: the final ``front_mean - rear_mean`` (~0.6 at the
+    reference, → 0 under full redistribution, < 0 if the cohorts cross over).
+    """
+    records = load_snapshots(snapshot_dir)
+    iterations = np.unique(records["iter"])
+    iterations = iterations[iterations >= burn_in_iteration]
+    world_size = (world_width, world_height)
+
+    reference = records[records["iter"] == iterations[0]]
+    reference = reference[np.argsort(reference["id"])]
+    along = _band_frame_along(reference, world_size)
+    ranks = np.argsort(np.argsort(along)) / max(len(along) - 1, 1)
+    population = len(reference)
+    sample_size = min(int(sample_fraction * population), sample_cap)
+    generator = np.random.default_rng(seed)
+
+    def sample(band: tuple[float, float]) -> np.ndarray:
+        low, high = band
+        pool = reference["id"][(ranks >= low) & (ranks < high)]
+        drawn = generator.choice(pool, size=min(sample_size, len(pool)), replace=False)
+        return np.sort(drawn)
+
+    cohorts = {"front": sample(front_band), "rear": sample(rear_band)}
+    series = {name: {"mean": [], "std": []} for name in cohorts}
+    times_seconds: list[float] = []
+    for iteration in iterations:
+        snapshot = records[records["iter"] == iteration]
+        snapshot = snapshot[np.argsort(snapshot["id"])]
+        frame_ranks = np.argsort(np.argsort(_band_frame_along(snapshot, world_size)))
+        frame_ranks = frame_ranks / max(len(snapshot) - 1, 1)
+        snapshot_ids = snapshot["id"]
+        times_seconds.append(float(iteration - iterations[0]))
+        for name, ids in cohorts.items():
+            positions = np.searchsorted(snapshot_ids, ids)
+            positions = positions[positions < len(snapshot_ids)]
+            present = snapshot_ids[positions] == ids[: len(positions)]
+            cohort_ranks = frame_ranks[positions[present]]
+            series[name]["mean"].append(float(cohort_ranks.mean()))
+            series[name]["std"].append(float(cohort_ranks.std()))
+
+    cohort_separation = series["front"]["mean"][-1] - series["rear"]["mean"][-1]
+    return {
+        "iterations_from_reference": times_seconds,
+        "sample_size_per_cohort": sample_size,
+        "population": population,
+        "cohort_mean_rank": {n: series[n]["mean"] for n in cohorts},
+        "cohort_std_rank": {n: series[n]["std"] for n in cohorts},
+        "cohort_separation": cohort_separation,
+    }
+
+
+def neighbour_anisotropy_v2(
+    snapshot_dir: str | Path,
+    world_width: float,
+    world_height: float,
+    inner_radius: float = 0.01,
+    outer_radius: float = 0.07,
+    frame_stride: int = 5,
+    burn_in_iteration: int = 0,
+) -> dict:
+    """State-conditioned angular neighbour-density anisotropy (Weinburd 2024).
+
+    For every focal locust the bearings of neighbours in the annulus
+    ``[inner_radius, outer_radius]`` (metres) are taken relative to its
+    heading (0 = ahead) and pooled per motion state — ``stationary`` (rest),
+    ``walking`` (active, not hopping), ``hopping`` (active + hopping) — read
+    from the snapshot flags. The field signature (Weinburd et al. 2024) is a
+    depleted frontal/axial sector with the highest density to the sides
+    around MOVING locusts, and near-isotropy around stationary ones.
+
+    Each state is summarized by the low-order angular Fourier moments
+    ``a1 = <cos theta>`` (front-back: < 0 = front-depleted) and
+    ``a2 = <cos 2theta>`` (axis vs lateral: < 0 = lateral-dense, the
+    field-like packing; > 0 = fore-aft/columnar files), plus 45-degree
+    sector occupancies. Two held-out scalars condition the metric on state,
+    matching the field result rather than any calibration target:
+    ``lateral_packing_walking`` = -a2 for walking (> 0 = field-like) and
+    ``state_contrast`` = |a2_walking| - |a2_stationary| (> 0 = movers more
+    anisotropic than stationary, as observed).
+    """
+    records = load_snapshots(snapshot_dir)
+    iterations = np.unique(records["iter"])
+    iterations = iterations[iterations >= burn_in_iteration][::frame_stride]
+    world = np.array([world_width, world_height])
+    bearings: dict[str, list[float]] = {"stationary": [], "walking": [], "hopping": []}
+
+    for iteration in iterations:
+        snapshot = records[records["iter"] == iteration]
+        positions = (
+            np.column_stack([snapshot["x"], snapshot["y"]]).astype(np.float64) % world
+        )
+        tree = KDTree(positions, boxsize=(world_width, world_height))
+        headings = snapshot["heading"].astype(np.float64)
+        active = (snapshot["flags"] & 1) != 0
+        hopping = (snapshot["flags"] & 2) != 0
+        neighbour_lists = tree.query_ball_point(positions, r=outer_radius)
+        for focal, neighbours in enumerate(neighbour_lists):
+            state = "stationary" if not active[focal] else ("hopping" if hopping[focal] else "walking")
+            store = bearings[state]
+            for other in neighbours:
+                if other == focal:
+                    continue
+                offset = (positions[other] - positions[focal] + world / 2) % world - world / 2
+                distance = float(np.hypot(offset[0], offset[1]))
+                if distance < inner_radius or distance > outer_radius:
+                    continue
+                bearing = np.arctan2(offset[1], offset[0]) - headings[focal]
+                store.append(float((bearing + np.pi) % (2 * np.pi) - np.pi))
+
+    def summarize(values: list[float]) -> dict | None:
+        if len(values) < 50:
+            return None
+        angles = np.array(values)
+        wedge = np.pi / 8  # 45-degree sectors
+        front = float(np.mean(np.abs(angles) < wedge))
+        rear = float(np.mean(np.abs(np.abs(angles) - np.pi) < wedge))
+        lateral = float(np.mean(np.abs(np.abs(angles) - np.pi / 2) < wedge)) / 2
+        a1c, a1s = float(np.mean(np.cos(angles))), float(np.mean(np.sin(angles)))
+        a2c, a2s = float(np.mean(np.cos(2 * angles))), float(np.mean(np.sin(2 * angles)))
+        return {
+            "count": len(angles),
+            "a1": a1c,
+            "a2": a2c,
+            # moduli of the complex trigonometric moments <e^{i n theta}>, the
+            # non-negative, rotation-invariant strengths Weinburd (2024) reports
+            # (|M1|, |M2|); the sign/direction lives in a1, a2 above.
+            "m1_modulus": float(np.hypot(a1c, a1s)),
+            "m2_modulus": float(np.hypot(a2c, a2s)),
+            "front_fraction": front,
+            "rear_fraction": rear,
+            "lateral_fraction": lateral,
+            "front_over_lateral": front / (lateral + 1e-9),
+        }
+
+    states = {name: summarize(vals) for name, vals in bearings.items()}
+    walking = states.get("walking")
+    stationary = states.get("stationary")
+    lateral_packing_walking = -walking["a2"] if walking else float("nan")
+    state_contrast = (
+        abs(walking["a2"]) - abs(stationary["a2"])
+        if walking and stationary
+        else float("nan")
+    )
+    return {
+        "states": states,
+        "lateral_packing_walking": lateral_packing_walking,
+        "state_contrast": state_contrast,
+    }
