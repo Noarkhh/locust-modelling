@@ -146,10 +146,30 @@ def compute_metrics(
     # Pooling sums counts over snapshots; renormalize the one absolute density.
     aggregated["front_peak_density"] /= len(along_band_per_snapshot)
 
-    # Band speed: minimum-image COM displacement per snapshot interval.
+    # Band speed: minimum-image COM displacement per snapshot interval,
+    # measured only on axes along which the band is LOCALIZED. On a "front"
+    # axis the periodic band spans the whole domain, so its circular-mean
+    # centre of mass is undefined and jitters by a large fraction of the
+    # world; including that axis swamps the real march-axis displacement once
+    # the front is long (invisible at the 3.6 m calibration front, dominant
+    # at hundreds of metres). Localization is measured by the circular
+    # resultant length R of the agent angles on each axis: a band that spans
+    # the torus uniformly has R ~ 0, a concentrated band has R well above 0.
+    # The threshold is scale-invariant, so it leaves the calibration-scale
+    # values unchanged while excluding long fronts. NaN when neither axis is
+    # localized (no defined band position, hence no defined travel).
     center_track = np.array(centers_of_mass)
     world = np.array(world_size)[None, :]
+    world_row = np.array(world_size)
+    resultants = []
+    for _, positions, _ in positions_by_id:
+        angles = positions / world_row * 2 * np.pi
+        resultants.append(
+            np.hypot(np.cos(angles).mean(axis=0), np.sin(angles).mean(axis=0))
+        )
+    march_axis = np.mean(resultants, axis=0) > 0.2  # localized axes
     displacements = (np.diff(center_track, axis=0) + world / 2) % world - world / 2
+    displacements = displacements * march_axis  # zero out delocalized (front) axes
     band_speed = float(
         np.mean(np.linalg.norm(displacements, axis=1)) / snapshot_interval_seconds
     )
@@ -186,7 +206,6 @@ def compute_metrics(
     # NaN when no agent marches through any window: an entirely paused
     # population has no defined marching rate.
     individual_rates = []
-    world_row = np.array(world_size)
     for (ids_a, pos_a, active_a), (ids_b, pos_b, active_b) in zip(
         positions_by_id[:-1], positions_by_id[1:]
     ):
