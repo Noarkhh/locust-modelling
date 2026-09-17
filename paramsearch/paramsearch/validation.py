@@ -20,7 +20,7 @@ from pathlib import Path
 import numpy as np
 from scipy.spatial import KDTree
 
-from .metrics import SNAPSHOT_DTYPE, _circular_center_of_mass, load_snapshots
+from .metrics import SNAPSHOT_DTYPE, _circular_center_of_mass, frame_slices, load_snapshots
 
 
 def _band_frame_along(
@@ -68,11 +68,12 @@ def marking_experiment(
     |mean rank - 0.5| over cohorts (1 = fully mixed, 0 = ranks preserved).
     """
     records = load_snapshots(snapshot_dir)
+    frames = frame_slices(records)
     iterations = np.unique(records["iter"])
     iterations = iterations[iterations >= burn_in_iteration]
     world_size = (world_width, world_height)
 
-    reference = records[records["iter"] == iterations[0]]
+    reference = records[frames[int(iterations[0])]]
     reference = reference[np.argsort(reference["id"])]
     along = _band_frame_along(reference, world_size)
     ranks = np.argsort(np.argsort(along)) / max(len(along) - 1, 1)
@@ -87,7 +88,7 @@ def marking_experiment(
     times_seconds: list[float] = []
     final_matrix: dict[str, list[float]] = {}
     for index, iteration in enumerate(iterations):
-        snapshot = records[records["iter"] == iteration]
+        snapshot = records[frames[int(iteration)]]
         snapshot = snapshot[np.argsort(snapshot["id"])]
         along = _band_frame_along(snapshot, world_size)
         frame_ranks = np.argsort(np.argsort(along)) / max(len(along) - 1, 1)
@@ -141,6 +142,7 @@ def neighbour_anisotropy(
     isotropic, > 1 = field-like fore-aft alignment of neighbours.
     """
     records = load_snapshots(snapshot_dir)
+    frames = frame_slices(records)
     iterations = np.unique(records["iter"])
     iterations = iterations[iterations >= burn_in_iteration][::frame_stride]
     world_size = (world_width, world_height)
@@ -148,7 +150,7 @@ def neighbour_anisotropy(
     edges = np.linspace(-np.pi, np.pi, bearing_bins + 1)
 
     for iteration in iterations:
-        snapshot = records[records["iter"] == iteration]
+        snapshot = records[frames[int(iteration)]]
         positions = (
             np.column_stack([snapshot["x"], snapshot["y"]]).astype(np.float64)
             % world_size
@@ -210,11 +212,12 @@ def marking_experiment_v2(
     reference, → 0 under full redistribution, < 0 if the cohorts cross over).
     """
     records = load_snapshots(snapshot_dir)
+    frames = frame_slices(records)
     iterations = np.unique(records["iter"])
     iterations = iterations[iterations >= burn_in_iteration]
     world_size = (world_width, world_height)
 
-    reference = records[records["iter"] == iterations[0]]
+    reference = records[frames[int(iterations[0])]]
     reference = reference[np.argsort(reference["id"])]
     along = _band_frame_along(reference, world_size)
     ranks = np.argsort(np.argsort(along)) / max(len(along) - 1, 1)
@@ -232,7 +235,7 @@ def marking_experiment_v2(
     series = {name: {"mean": [], "std": []} for name in cohorts}
     times_seconds: list[float] = []
     for iteration in iterations:
-        snapshot = records[records["iter"] == iteration]
+        snapshot = records[frames[int(iteration)]]
         snapshot = snapshot[np.argsort(snapshot["id"])]
         frame_ranks = np.argsort(np.argsort(_band_frame_along(snapshot, world_size)))
         frame_ranks = frame_ranks / max(len(snapshot) - 1, 1)
@@ -287,13 +290,14 @@ def neighbour_anisotropy_v2(
     anisotropic than stationary, as observed).
     """
     records = load_snapshots(snapshot_dir)
+    frames = frame_slices(records)
     iterations = np.unique(records["iter"])
     iterations = iterations[iterations >= burn_in_iteration][::frame_stride]
     world = np.array([world_width, world_height])
     bearings: dict[str, list[float]] = {"stationary": [], "walking": [], "hopping": []}
 
     for iteration in iterations:
-        snapshot = records[records["iter"] == iteration]
+        snapshot = records[frames[int(iteration)]]
         positions = (
             np.column_stack([snapshot["x"], snapshot["y"]]).astype(np.float64) % world
         )

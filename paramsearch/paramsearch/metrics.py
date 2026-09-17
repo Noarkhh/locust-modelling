@@ -54,6 +54,15 @@ def load_snapshots(snapshot_dir: str | Path) -> np.ndarray:
     return records[np.argsort(records["iter"], kind="stable")]
 
 
+def frame_slices(records: np.ndarray) -> dict[int, slice]:
+    """Row range of every iteration in an iteration-sorted record array (as
+    returned by ``load_snapshots``), so per-frame loops take a slice instead of
+    rescanning the whole array for each frame (O(F N) once, not O(F^2 N))."""
+    iterations, starts = np.unique(records["iter"], return_index=True)
+    ends = np.append(starts[1:], len(records))
+    return {int(i): slice(int(s), int(e)) for i, s, e in zip(iterations, starts, ends)}
+
+
 def compute_metrics(
     snapshot_dir: str | Path,
     world_width: float,
@@ -93,8 +102,9 @@ def compute_metrics(
     along_band_per_snapshot = []
     moving_heading_vectors = []
     positions_by_id = []
+    frames = frame_slices(records)
     for iteration in kept_iterations:
-        snapshot = records[records["iter"] == iteration]
+        snapshot = records[frames[int(iteration)]]
         metrics, center_of_mass, along_band = _snapshot_metrics(snapshot, world_size)
         snapshot_metrics.append(metrics)
         centers_of_mass.append(center_of_mass)
