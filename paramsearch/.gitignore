@@ -220,4 +220,5 @@ __marimo__/
 .streamlit/secrets.toml
 
 runs/
-figures/output/**/*.png
+figures/output/
+#figures/output/**/*.{png, svg, json, mp4}

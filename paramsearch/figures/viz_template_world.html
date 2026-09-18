@@ -1,0 +1,152 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>NF trial 305 — fixed world view</title>
+<style>
+  body { margin: 0; background: #111; color: #ddd; font: 13px system-ui, sans-serif; }
+  #top { display: flex; gap: 16px; align-items: center; padding: 8px 12px; }
+  #hud { font-variant-numeric: tabular-nums; white-space: pre; }
+  canvas { display: block; background: #181818; }
+  input[type=range] { width: 300px; }
+  button { background: #333; color: #ddd; border: 1px solid #555; padding: 4px 10px; }
+</style>
+</head>
+<body>
+<div id="top">
+  <button id="play">pause</button>
+  <input type="range" id="scrub" min="0" value="0">
+  <label>speed <select id="speed"><option>0.25</option><option>0.5</option><option selected>1</option><option>2</option><option>4</option></select>×</label>
+  <span id="hud"></span>
+  <span id="legend" style="display:flex;align-items:center;gap:8px;margin-left:auto">
+    <canvas id="wheel" width="56" height="56"></canvas>
+    <span style="color:#999;font-size:11px;line-height:1.5">
+      hue = heading (red = march dir →)<br>
+      <span style="color:#c33">dim</span> = resting&nbsp;
+      <span style="color:#f55">normal</span> = walking&nbsp;
+      <span style="color:#faa">bright</span> = hopping
+    </span>
+  </span>
+</div>
+<canvas id="main"></canvas>
+<canvas id="profile" height="90"></canvas>
+<script>
+const META = __META__;
+const raw = Uint8Array.from(atob("__DATA__"), c => c.charCodeAt(0));
+const frames = [];
+{
+  let off = 0;
+  const dv = new DataView(raw.buffer);
+  while (off < raw.length) {
+    const len = dv.getUint32(off, true); off += 4;
+    frames.push({ iter: dv.getUint32(off, true), order: dv.getFloat32(off + 4, true),
+                  agents: new DataView(raw.buffer, off + 8, len - 8) });
+    off += len;
+  }
+}
+const main = document.getElementById("main"), prof = document.getElementById("profile");
+const scrub = document.getElementById("scrub"); scrub.max = frames.length - 1;
+const hud = document.getElementById("hud"), playBtn = document.getElementById("play");
+main.width = innerWidth; prof.width = innerWidth;
+// Vertical exaggeration: the strip is 3.6 m tall vs 113.7 m wide; a
+// true-aspect render would be ~30 px tall. Fix the strip height at 160 px
+// and label the exaggeration factor.
+const stripHeight = 160;
+main.height = Math.min(innerHeight - 160, 560);
+// View state: worldLeft (m), zoom multiplier on the fit-to-width scale.
+// Scroll = pan, wheel+ctrl/cmd or trackpad pinch = zoom around cursor,
+// drag = pan freely. Vertical exaggeration shrinks toward true aspect as
+// you zoom in.
+const baseScale = main.width / META.worldWidth;
+let zoom = 1, worldLeft = 0, worldBottom = 0;
+function scales() {
+  const xs = baseScale * zoom;
+  const ys = Math.max(xs, Math.min(stripHeight / META.worldHeight * zoom, xs * 12));
+  return [xs, Math.min(ys, main.height / META.worldHeight)];
+}
+function clampView() {
+  const [xs, ys] = scales();
+  worldLeft = Math.max(0, Math.min(worldLeft, META.worldWidth - main.width / xs));
+  worldBottom = Math.max(0, Math.min(worldBottom, Math.max(0, META.worldHeight - main.height / ys)));
+}
+main.addEventListener("wheel", e => {
+  e.preventDefault();
+  const [xs, ys] = scales();
+  if (e.ctrlKey || e.metaKey) {
+    const anchor = worldLeft + e.offsetX / xs;
+    zoom = Math.max(1, Math.min(zoom * Math.exp(-e.deltaY * 0.01), 400));
+    const [nxs] = scales();
+    worldLeft = anchor - e.offsetX / nxs;
+  } else {
+    worldLeft += (e.deltaX + e.deltaY) / xs;
+  }
+  clampView(); draw(frameIndex);
+}, { passive: false });
+let dragging = null;
+main.addEventListener("pointerdown", e => { dragging = [e.clientX, e.clientY, worldLeft, worldBottom]; });
+addEventListener("pointerup", () => { dragging = null; });
+addEventListener("pointermove", e => {
+  if (!dragging) return;
+  const [xs, ys] = scales();
+  worldLeft = dragging[2] - (e.clientX - dragging[0]) / xs;
+  worldBottom = dragging[3] + (e.clientY - dragging[1]) / ys;
+  clampView(); draw(frameIndex);
+});
+let frameIndex = 0, playing = true;
+function draw(k) {
+  const f = frames[k], ctx = main.getContext("2d");
+  const [xScale, yScale] = scales();
+  ctx.fillStyle = "#181818"; ctx.fillRect(0, 0, main.width, main.height);
+  const counts = new Array(160).fill(0);
+  for (let a = 0; a < META.agentCount; a++) {
+    const wx = f.agents.getUint16(a * 6, true) / 65535 * META.worldWidth;
+    const wy = f.agents.getUint16(a * 6 + 2, true) / 65535 * META.worldHeight;
+    const h = f.agents.getUint8(a * 6 + 4), flags = f.agents.getUint8(a * 6 + 5);
+    const active = flags & 1, hopping = flags & 2;
+    ctx.fillStyle = `hsl(${h / 255 * 360} ${active ? 90 : 25}% ${hopping ? 75 : active ? 55 : 35}%)`;
+    const size = zoom > 8 ? 3 : 2;
+    ctx.fillRect((wx - worldLeft) * xScale - 1, main.height - (wy - worldBottom) * yScale - 1, size, size);
+    counts[Math.min(Math.floor(wx / META.worldWidth * 160), 159)]++;
+  }
+  ctx.fillStyle = "#888";
+  ctx.fillText(`view: x ${worldLeft.toFixed(1)}-${(worldLeft + main.width / xScale).toFixed(1)} m of ${META.worldWidth.toFixed(1)} m  |  zoom ${zoom.toFixed(1)}x  vertical x${(yScale / xScale).toFixed(1)}  |  scroll=pan  ctrl+scroll/pinch=zoom  drag=pan`, 10, main.height - 8);
+  const pctx = prof.getContext("2d");
+  pctx.fillStyle = "#181818"; pctx.fillRect(0, 0, prof.width, prof.height);
+  const peak = Math.max(...counts, 1);
+  pctx.fillStyle = "#c96";
+  counts.forEach((c, i) => {
+    const w = prof.width / 160;
+    pctx.fillRect(i * w, prof.height - c / peak * (prof.height - 12), w - 1, c / peak * (prof.height - 12));
+  });
+  pctx.fillStyle = "#888"; pctx.fillText("along-world density (full torus)", 8, 12);
+  hud.textContent = ` iter ${String(f.iter).padStart(5)}  t=${(f.iter * META.timestep).toFixed(0)}s  order ${f.order.toFixed(3)}`;
+  scrub.value = k;
+}
+document.getElementById("speed").onchange = e => { tickMs = 40 / parseFloat(e.target.value); };
+let tickMs = 40, last = 0;
+function loop(t) {
+  if (playing && t - last >= tickMs) { frameIndex = (frameIndex + 1) % frames.length; draw(frameIndex); last = t; }
+  requestAnimationFrame(loop);
+}
+playBtn.onclick = () => { playing = !playing; playBtn.textContent = playing ? "pause" : "play"; };
+scrub.oninput = e => { playing = false; playBtn.textContent = "play"; frameIndex = +e.target.value; draw(frameIndex); };
+{
+  const wc = document.getElementById("wheel").getContext("2d");
+  const cx = 28, cy = 28;
+  for (let deg = 0; deg < 360; deg += 4) {
+    // screen y is flipped: heading angle t maps to screen angle -t
+    wc.beginPath();
+    wc.moveTo(cx, cy);
+    wc.arc(cx, cy, 24, (-deg - 4) * Math.PI / 180, -deg * Math.PI / 180);
+    wc.fillStyle = `hsl(${deg} 90% 55%)`;
+    wc.fill();
+  }
+  wc.fillStyle = "#181818"; wc.beginPath(); wc.arc(cx, cy, 13, 0, 7); wc.fill();
+  wc.fillStyle = "#ddd"; wc.font = "9px system-ui";
+  wc.fillText("\u2192", cx + 14, cy + 3);
+  wc.fillText("\u2191", cx - 3, cy - 15);
+}
+draw(0); requestAnimationFrame(loop);
+</script>
+</body>
+</html>

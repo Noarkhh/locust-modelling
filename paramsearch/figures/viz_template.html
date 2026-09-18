@@ -1,0 +1,90 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>NF trial 305 — band animation</title>
+<style>
+  body { margin: 0; background: #111; color: #ddd; font: 13px system-ui, sans-serif; }
+  #top { display: flex; gap: 16px; align-items: center; padding: 8px 12px; }
+  #hud { font-variant-numeric: tabular-nums; white-space: pre; }
+  canvas { display: block; background: #181818; }
+  #main { width: 100vw; }
+  #profile { width: 100vw; height: 90px; }
+  input[type=range] { width: 300px; }
+  button { background: #333; color: #ddd; border: 1px solid #555; padding: 4px 10px; }
+</style>
+</head>
+<body>
+<div id="top">
+  <button id="play">pause</button>
+  <input type="range" id="scrub" min="0" value="0">
+  <label>speed <select id="speed"><option>0.25</option><option>0.5</option><option selected>1</option><option>2</option><option>4</option></select>×</label>
+  <span id="hud"></span>
+</div>
+<canvas id="main"></canvas>
+<canvas id="profile"></canvas>
+<script>
+const META = __META__;
+const raw = Uint8Array.from(atob("__DATA__"), c => c.charCodeAt(0));
+const frames = [];
+{
+  let off = 0;
+  const dv = new DataView(raw.buffer);
+  while (off < raw.length) {
+    const len = dv.getUint32(off, true); off += 4;
+    frames.push({ cx: dv.getFloat32(off, true), cy: dv.getFloat32(off + 4, true),
+                  iter: dv.getUint32(off + 8, true), order: dv.getFloat32(off + 12, true),
+                  agents: new DataView(raw.buffer, off + 16, len - 16) });
+    off += len;
+  }
+}
+const main = document.getElementById("main"), prof = document.getElementById("profile");
+const scrub = document.getElementById("scrub"); scrub.max = frames.length - 1;
+const hud = document.getElementById("hud"), playBtn = document.getElementById("play");
+main.width = innerWidth; main.height = Math.min(innerHeight - 160, 520);
+prof.width = innerWidth; prof.height = 90;
+// View spans a fixed window centered on the band COM; meters -> pixels.
+const viewMeters = Math.max(META.worldHeight * 2.5, 16);
+let frameIndex = 0, playing = true;
+function draw(k) {
+  const f = frames[k], ctx = main.getContext("2d");
+  const scale = main.width / viewMeters;
+  ctx.fillStyle = "#181818"; ctx.fillRect(0, 0, main.width, main.height);
+  const counts = new Array(80).fill(0);
+  for (let a = 0; a < META.agentCount; a++) {
+    const x = f.agents.getInt16(a * 6, true) / 1000, y = f.agents.getInt16(a * 6 + 2, true) / 1000;
+    const h = f.agents.getUint8(a * 6 + 4), flags = f.agents.getUint8(a * 6 + 5);
+    const active = flags & 1, hopping = flags & 2;
+    const px = main.width / 2 + x * scale, py = main.height / 2 - y * scale;
+    ctx.fillStyle = `hsl(${h / 255 * 360} ${active ? 90 : 25}% ${hopping ? 75 : active ? 55 : 35}%)`;
+    ctx.fillRect(px - 1.5, py - 1.5, 3, 3);
+    const bin = Math.floor((x / viewMeters + 0.5) * 80);
+    if (bin >= 0 && bin < 80) counts[bin]++;
+  }
+  // ruler: world-frame x of the view center
+  ctx.fillStyle = "#888";
+  ctx.fillText(`world x of view centre: ${f.cx.toFixed(1)} m  |  view width ${viewMeters.toFixed(0)} m`, 10, main.height - 8);
+  const pctx = prof.getContext("2d");
+  pctx.fillStyle = "#181818"; pctx.fillRect(0, 0, prof.width, prof.height);
+  const peak = Math.max(...counts, 1);
+  pctx.fillStyle = "#c96";
+  counts.forEach((c, i) => {
+    const w = prof.width / 80;
+    pctx.fillRect(i * w, prof.height - c / peak * (prof.height - 12), w - 1, c / peak * (prof.height - 12));
+  });
+  pctx.fillStyle = "#888"; pctx.fillText("along-band density (view window)", 8, 12);
+  hud.textContent = ` iter ${String(f.iter).padStart(5)}  t=${(f.iter * META.timestep).toFixed(0)}s  order ${f.order.toFixed(3)}`;
+  scrub.value = k;
+}
+document.getElementById("speed").onchange = e => { tickMs = 40 / parseFloat(e.target.value); };
+let tickMs = 40, last = 0;
+function loop(t) {
+  if (playing && t - last >= tickMs) { frameIndex = (frameIndex + 1) % frames.length; draw(frameIndex); last = t; }
+  requestAnimationFrame(loop);
+}
+playBtn.onclick = () => { playing = !playing; playBtn.textContent = playing ? "pause" : "play"; };
+scrub.oninput = e => { playing = false; playBtn.textContent = "play"; frameIndex = +e.target.value; draw(frameIndex); };
+draw(0); requestAnimationFrame(loop);
+</script>
+</body>
+</html>
