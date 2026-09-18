@@ -260,101 +260,102 @@ def marking_experiment_v2(
     }
 
 
+WEINBURD_TABLE4 = {
+    # Weinburd et al. 2024, Appendix Table 4: trigonometric moments of relative
+    # neighbour angles within 7 cm, all bands. Keys as in the paper.
+    "stationary": {"count": 1505672, "M1": 0.0040, "psi1": -2.5370, "Ms1": -0.0023, "Mc1": -0.0033,
+                   "M2": 0.0146, "psi2": -0.2191, "Ms2": -0.0032, "Mc2": 0.0142},
+    "walking": {"count": 1527233, "M1": 0.0173, "psi1": -1.5242, "Ms1": -0.0173, "Mc1": 0.0008,
+                "M2": 0.0248, "psi2": 0.0670, "Ms2": 0.0017, "Mc2": 0.0247},
+    "hopping": {"count": 3536882, "M1": 0.0203, "psi1": 0.1393, "Ms1": 0.0028, "Mc1": 0.0201,
+                "M2": 0.0358, "psi2": -0.0492, "Ms2": -0.0018, "Mc2": 0.0357},
+}
+
+
 def neighbour_anisotropy_v2(
     snapshot_dir: str | Path,
     world_width: float,
     world_height: float,
-    inner_radius: float = 0.01,
     outer_radius: float = 0.07,
+    inner_radius: float = 0.0,
     frame_stride: int = 5,
     burn_in_iteration: int = 0,
 ) -> dict:
-    """State-conditioned angular neighbour-density anisotropy (Weinburd 2024).
+    """Trigonometric moments of relative neighbour angles, exactly as defined in
+    Weinburd et al. 2024 (Appendix F, "Trigonometric moments"; Table 4).
 
-    For every focal locust the bearings of neighbours in the annulus
-    ``[inner_radius, outer_radius]`` (metres) are taken relative to its
-    heading (0 = ahead) and pooled per motion state — ``stationary`` (rest),
-    ``walking`` (active, not hopping), ``hopping`` (active + hopping) — read
-    from the snapshot flags. The field signature (Weinburd et al. 2024) is a
-    depleted frontal/axial sector with the highest density to the sides
-    around MOVING locusts, and near-isotropy around stationary ones.
+    For every focal locust and every neighbour within ``outer_radius`` (7 cm in
+    the paper, no inner exclusion) the neighbour's relative position is expressed
+    in the focal's frame with the focal facing UP: ``phi = atan2(y, x)`` where
+    x is to the focal's right and y is ahead, so phi = 0 is right, pi/2 ahead,
+    pi left, -pi/2 behind. Angles are pooled per motion state of the focal —
+    ``stationary`` (rest), ``walking`` (active, not hopping), ``hopping``
+    (active + hopping) — from the snapshot flags. For each state and p = 1, 2:
 
-    Each state is summarized by the low-order angular Fourier moments
-    ``a1 = <cos theta>`` (front-back: < 0 = front-depleted) and
-    ``a2 = <cos 2theta>`` (axis vs lateral: < 0 = lateral-dense, the
-    field-like packing; > 0 = fore-aft/columnar files), plus 45-degree
-    sector occupancies. Two held-out scalars condition the metric on state,
-    matching the field result rather than any calibration target:
-    ``lateral_packing_walking`` = -a2 for walking (> 0 = field-like) and
-    ``state_contrast`` = |a2_walking| - |a2_stationary| (> 0 = movers more
-    anisotropic than stationary, as observed).
+        Ms_p = mean(sin(p phi)),  Mc_p = mean(cos(p phi)),
+        |M_p| = hypot(Mc_p, Ms_p),  psi_p = atan2(Ms_p, Mc_p) / p.
+
+    The paper's headline quantities are ``-Ms1`` (front-back asymmetry: > 0
+    means lower density in front and higher behind the focal) and ``Mc2``
+    (four-fold anisotropy: > 0 means high density to the left and right, low
+    in front and behind). Field values (all bands): walking -Ms1 = 0.0173,
+    Mc2 = 0.0247, |M2| = 0.0248; stationary |M2| = 0.0146; hopping
+    Mc2 = 0.0357 — see ``WEINBURD_TABLE4``.
     """
     records = load_snapshots(snapshot_dir)
     frames = frame_slices(records)
     iterations = np.unique(records["iter"])
     iterations = iterations[iterations >= burn_in_iteration][::frame_stride]
     world = np.array([world_width, world_height])
-    bearings: dict[str, list[float]] = {"stationary": [], "walking": [], "hopping": []}
+    angles: dict[str, list[np.ndarray]] = {"stationary": [], "walking": [], "hopping": []}
 
     for iteration in iterations:
         snapshot = records[frames[int(iteration)]]
         positions = (
             np.column_stack([snapshot["x"], snapshot["y"]]).astype(np.float64) % world
         )
-        tree = KDTree(positions, boxsize=(world_width, world_height))
         headings = snapshot["heading"].astype(np.float64)
         active = (snapshot["flags"] & 1) != 0
         hopping = (snapshot["flags"] & 2) != 0
-        neighbour_lists = tree.query_ball_point(positions, r=outer_radius)
-        for focal, neighbours in enumerate(neighbour_lists):
-            state = "stationary" if not active[focal] else ("hopping" if hopping[focal] else "walking")
-            store = bearings[state]
-            for other in neighbours:
-                if other == focal:
-                    continue
-                offset = (positions[other] - positions[focal] + world / 2) % world - world / 2
-                distance = float(np.hypot(offset[0], offset[1]))
-                if distance < inner_radius or distance > outer_radius:
-                    continue
-                bearing = np.arctan2(offset[1], offset[0]) - headings[focal]
-                store.append(float((bearing + np.pi) % (2 * np.pi) - np.pi))
+        tree = KDTree(positions, boxsize=(world_width, world_height))
+        pairs = tree.query_pairs(outer_radius, output_type="ndarray")
+        if len(pairs) == 0:
+            continue
+        # every member of a pair is a focal once
+        focal = np.concatenate([pairs[:, 0], pairs[:, 1]])
+        other = np.concatenate([pairs[:, 1], pairs[:, 0]])
+        offset = (positions[other] - positions[focal] + world / 2) % world - world / 2
+        if inner_radius > 0:
+            keep = np.hypot(offset[:, 0], offset[:, 1]) >= inner_radius
+            focal, offset = focal[keep], offset[keep]
+        heading = headings[focal]
+        # focal frame, focal facing up: x = right (clockwise from heading), y = ahead
+        ahead = offset[:, 0] * np.cos(heading) + offset[:, 1] * np.sin(heading)
+        right = offset[:, 0] * np.sin(heading) - offset[:, 1] * np.cos(heading)
+        phi = np.arctan2(ahead, right)
+        state_of = np.where(~active[focal], 0, np.where(hopping[focal], 2, 1))
+        for code, name in enumerate(("stationary", "walking", "hopping")):
+            angles[name].append(phi[state_of == code])
 
-    def summarize(values: list[float]) -> dict | None:
-        if len(values) < 50:
+    def moments(values: list[np.ndarray]) -> dict | None:
+        phi = np.concatenate(values) if values else np.zeros(0)
+        if phi.size < 50:
             return None
-        angles = np.array(values)
-        wedge = np.pi / 8  # 45-degree sectors
-        front = float(np.mean(np.abs(angles) < wedge))
-        rear = float(np.mean(np.abs(np.abs(angles) - np.pi) < wedge))
-        lateral = float(np.mean(np.abs(np.abs(angles) - np.pi / 2) < wedge)) / 2
-        a1c, a1s = float(np.mean(np.cos(angles))), float(np.mean(np.sin(angles)))
-        a2c, a2s = float(np.mean(np.cos(2 * angles))), float(np.mean(np.sin(2 * angles)))
-        return {
-            "count": len(angles),
-            "a1": a1c,
-            "a2": a2c,
-            # moduli of the complex trigonometric moments <e^{i n theta}>, the
-            # non-negative, rotation-invariant strengths Weinburd (2024) reports
-            # (|M1|, |M2|); the sign/direction lives in a1, a2 above.
-            "m1_modulus": float(np.hypot(a1c, a1s)),
-            "m2_modulus": float(np.hypot(a2c, a2s)),
-            "front_fraction": front,
-            "rear_fraction": rear,
-            "lateral_fraction": lateral,
-            "front_over_lateral": front / (lateral + 1e-9),
-        }
+        out: dict = {"count": int(phi.size)}
+        for p in (1, 2):
+            ms, mc = float(np.mean(np.sin(p * phi))), float(np.mean(np.cos(p * phi)))
+            out[f"Ms{p}"], out[f"Mc{p}"] = ms, mc
+            out[f"M{p}"] = float(np.hypot(mc, ms))
+            out[f"psi{p}"] = float(np.arctan2(ms, mc) / p)
+        return out
 
-    states = {name: summarize(vals) for name, vals in bearings.items()}
-    walking = states.get("walking")
-    stationary = states.get("stationary")
-    lateral_packing_walking = -walking["a2"] if walking else float("nan")
-    state_contrast = (
-        abs(walking["a2"]) - abs(stationary["a2"])
-        if walking and stationary
-        else float("nan")
-    )
+    states = {name: moments(vals) for name, vals in angles.items()}
+    walking, stationary = states["walking"], states["stationary"]
     return {
         "states": states,
-        "lateral_packing_walking": lateral_packing_walking,
-        "state_contrast": state_contrast,
+        # the paper's two headline scalars, for the walking focal
+        "front_back_asymmetry": -walking["Ms1"] if walking else float("nan"),
+        "four_fold_anisotropy": walking["Mc2"] if walking else float("nan"),
+        # movers more anisotropic than resters, as in the field (> 0)
+        "state_contrast": (walking["M2"] - stationary["M2"]) if walking and stationary else float("nan"),
     }
